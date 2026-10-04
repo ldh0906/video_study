@@ -246,7 +246,7 @@ function TranscriptionSection({ s, set }: SectionProps) {
       </Block>
 
       {s.transcription === "local-whisper" ? (
-        <Block title="로컬 Whisper" description="whisper.cpp 공식 빌드를 내려받아 이 PC의 CPU로 실행합니다. 긴 강의는 시간이 걸리지만 무료이고 오프라인으로 동작해요.">
+        <Block title="로컬 Whisper" description={w?.version?.includes("GPU 가속") ? `${w.version}으로 받아쓰기를 처리합니다. 무료이고 오프라인으로 동작해요.` : "whisper.cpp 공식 빌드를 내려받아 이 PC의 CPU로 실행합니다. 긴 강의는 시간이 걸리지만 무료이고 오프라인으로 동작해요."}>
           <ToolRow
             name="whisper.cpp 엔진"
             info={w}

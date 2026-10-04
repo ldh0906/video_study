@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { openaiClient } from "../llm/openai";
 import { cutAudio, cutAudioWav, detectSilences, planChunks } from "../tools/ffmpeg";
-import { defaultThreads, transcribeLocal } from "../tools/whisper";
+import { defaultThreads, localParallelism, resolveWhisper, transcribeLocal } from "../tools/whisper";
 import { readJson, writeJson } from "../paths";
 import { mergeCues } from "../subtitles";
 import type { Segment, TranscriptionModel, WhisperModel } from "../../shared/types";
@@ -52,8 +52,9 @@ export async function transcribeAudio(opts: {
   report();
 
   const local = model === "local-whisper";
-  // whisper.cpp is CPU-bound: two processes sharing the cores beat many small ones.
-  const parallel = local ? 2 : opts.concurrency;
+  if (local) await resolveWhisper();
+  // CPU workers can share cores; GPU workers share the same limited VRAM.
+  const parallel = local ? localParallelism() : opts.concurrency;
   const results = await mapLimit(plan.chunks, parallel, async (chunk, i) => {
     const out = path.join(workDir, `${pad(i)}.json`);
     const cached = readJson<Segment[] | null>(out, null);

@@ -14,8 +14,29 @@ import { LLMError, type GenerateOptions, type GenerateResult, type LLMMessage } 
 const WORK_DIR = path.join(DATA_DIR, "tmp", "cli");
 fs.mkdirSync(WORK_DIR, { recursive: true });
 
-const CLAUDE_BIN = process.env.CLAUDE_CLI_PATH || "claude";
-const CODEX_BIN = process.env.CODEX_CLI_PATH || "codex";
+// Windows cannot spawn npm's .cmd shims without a shell. Resolve native
+// executables instead, including installs omitted from Explorer's stale PATH.
+function cliBinary(name: "claude" | "codex", override?: string): string {
+  if (override) return override;
+  if (process.platform !== "win32") return name;
+  const candidates = [path.join(os.homedir(), ".local", "bin", `${name}.exe`)];
+  for (const dir of (process.env.PATH ?? "").split(path.delimiter).filter(Boolean)) {
+    candidates.push(path.join(dir.replace(/^"|"$/g, ""), `${name}.exe`));
+  }
+  if (name === "codex") {
+    const npmRoot = path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "npm", "node_modules", "@openai", "codex");
+    const arch = process.arch === "arm64" ? "aarch64" : "x86_64";
+    const triple = `${arch}-pc-windows-msvc`;
+    candidates.push(
+      path.join(npmRoot, "node_modules", "@openai", `codex-win32-${process.arch}`, "vendor", triple, "bin", "codex.exe"),
+      path.join(npmRoot, "vendor", triple, "codex", "codex.exe"),
+    );
+  }
+  return candidates.find((file) => fs.existsSync(file)) ?? name;
+}
+
+const CLAUDE_BIN = cliBinary("claude", process.env.CLAUDE_CLI_PATH);
+const CODEX_BIN = cliBinary("codex", process.env.CODEX_CLI_PATH);
 
 /** Child env without API keys, so the CLIs use the signed-in account rather than a stray key. */
 function childEnv(drop: string[]) {

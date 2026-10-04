@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
-import { BIN_DIR, DATA_DIR } from "../paths";
+import { BIN_DIR, DATA_DIR, readJson } from "../paths";
 import type { Segment, ToolInfo, WhisperModel } from "../../shared/types";
 
 /**
@@ -13,6 +13,7 @@ import type { Segment, ToolInfo, WhisperModel } from "../../shared/types";
  */
 
 const WHISPER_DIR = path.join(BIN_DIR, "whisper");
+const GPU_DIR = path.join(BIN_DIR, "whisper-vulkan");
 const MODELS_DIR = path.join(DATA_DIR, "models");
 fs.mkdirSync(MODELS_DIR, { recursive: true });
 
@@ -48,16 +49,29 @@ async function exeWorks(bin: string) {
 
 let resolved: string | null | undefined;
 
+function gpuRuntime() {
+  const config = readJson<{ device: number; label: string } | null>(path.join(GPU_DIR, "accelerator.json"), null);
+  const bin = path.join(GPU_DIR, "whisper-cli.exe");
+  if (process.platform !== "win32" || !config || !Number.isInteger(config.device) || config.device < 0 || !fs.existsSync(bin)) return null;
+  return { ...config, bin };
+}
+
+// A single GPU worker avoids loading two large models into laptop VRAM.
+export function localParallelism() {
+  return resolved && resolved === gpuRuntime()?.bin ? 1 : 2;
+}
+
 export async function resolveWhisper(force = false): Promise<string | null> {
   if (resolved !== undefined && !force) return resolved;
-  const candidates = [process.env.WHISPER_CLI_PATH, findExe(WHISPER_DIR), "whisper-cli"].filter(Boolean) as string[];
+  const candidates = [process.env.WHISPER_CLI_PATH, gpuRuntime()?.bin, findExe(WHISPER_DIR), "whisper-cli"].filter(Boolean) as string[];
   for (const c of candidates) if (await exeWorks(c)) return (resolved = c);
   return (resolved = null);
 }
 
 export async function whisperStatus(): Promise<ToolInfo & { models: WhisperModel[] }> {
   const bin = await resolveWhisper();
-  return { ok: Boolean(bin), path: bin, models: installedModels() };
+  const gpu = gpuRuntime();
+  return { ok: Boolean(bin), path: bin, models: installedModels(), version: gpu && bin === gpu.bin ? `${gpu.label} · GPU 가속` : undefined };
 }
 
 // --- installation (user-initiated from settings) -----------------------------
@@ -153,6 +167,8 @@ export async function transcribeLocal(opts: {
     "-oj", "-of", outPrefix,
     "-pp",
   ];
+  const gpu = gpuRuntime();
+  if (gpu && bin === gpu.bin) args.push("-dev", String(gpu.device));
   if (opts.prompt) args.push("--prompt", opts.prompt.slice(0, 400));
 
   await new Promise<void>((resolve, reject) => {

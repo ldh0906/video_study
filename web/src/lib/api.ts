@@ -162,10 +162,16 @@ export function uploadFile(file: File, onProgress: (p: number) => void): Promise
     xhr.open("POST", `/api/uploads?name=${encodeURIComponent(file.name)}`);
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
     xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) resolve(JSON.parse(xhr.responseText));
-      else reject(new Error(`업로드 실패 (${xhr.status})`));
+      try {
+        const data = JSON.parse(xhr.responseText) as { uploadId?: string; error?: string };
+        if (xhr.status >= 200 && xhr.status < 300 && data.uploadId) resolve({ uploadId: data.uploadId });
+        else reject(new Error(data.error ?? `업로드 실패 (${xhr.status})`));
+      } catch {
+        reject(new Error(`업로드 응답을 읽지 못했습니다 (${xhr.status}). 다시 시도해 주세요.`));
+      }
     };
     xhr.onerror = () => reject(new Error("업로드 중 연결이 끊겼습니다."));
+    xhr.onabort = () => reject(new Error("업로드가 취소되었습니다."));
     xhr.send(file);
   });
 }
