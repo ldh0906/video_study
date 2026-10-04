@@ -15,7 +15,7 @@ import {
   type PDFPage,
 } from "pdf-lib";
 import type { ExportOptions, ExportResult, Lecture } from "../../shared/types";
-import { DATA_DIR, lectureDir, readJson, writeJson } from "../paths";
+import { lectureDir, readJson, writeJson } from "../paths";
 import { geometry } from "./document";
 
 const SLOT = "https://slot.invalid/";
@@ -66,11 +66,17 @@ function decodeName(n: string) {
 }
 
 async function render(url: string, onStage: (s: string) => void) {
+  const executablePath = browserPath();
   const browser = await puppeteer.launch({
-    executablePath: browserPath(),
+    executablePath,
     headless: true,
-    userDataDir: path.join(DATA_DIR, "tmp", "pdf-profile"),
-    args: ["--no-first-run", "--disable-extensions", "--disable-gpu"],
+    // Puppeteer creates and cleans a unique temporary profile for each render.
+    // A shared profile can stay locked after a crash or concurrent PDF export.
+    args: [
+      "--no-first-run", "--disable-extensions", "--disable-gpu",
+      // Edge's compatibility relaunch detaches the process from Puppeteer.
+      ...(path.basename(executablePath).toLowerCase() === "msedge.exe" ? ["--edge-skip-compat-layer-relaunch"] : []),
+    ],
   });
   try {
     const page = await browser.newPage();

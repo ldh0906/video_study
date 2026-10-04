@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
+import { createHash } from "node:crypto";
 import { fmtTime } from "../../shared/time";
 import type { Analysis, Chapter, Frame, Lecture, Overview, SectionAnalysis, Segment } from "../../shared/types";
-import { generateObject, type LLMImage, type LLMUsage } from "../llm";
+import { generateObject, strictJsonSchema, type LLMImage, type LLMUsage } from "../llm";
 import { lectureDir, readJson, writeJson } from "../paths";
 import { OverviewSchema, SectionSchema, overviewSystem, sectionSystem } from "../prompts";
 import { mapLimit } from "./util";
@@ -74,11 +75,63 @@ interface Ctx {
   onProgress: (p: number, detail: string) => void;
 }
 
+/** Resume only when the actual teaching inputs and instructions are unchanged. */
+export function sectionCacheKey(
+  lecture: Lecture,
+  segments: Segment[],
+  ranges: SectionRange[],
+  frames: { time: number; file: string; hash: string }[],
+  framesPerSection: number,
+) {
+  return createHash("sha256").update(JSON.stringify({
+    // Bump when the assembly of section context changes.
+    contextVersion: 2,
+    system: sectionSystem(lecture.options.outputLanguage),
+    schema: strictJsonSchema(SectionSchema),
+    title: lecture.title,
+    duration: lecture.durationSec,
+    model: lecture.options.analysis,
+    focus: lecture.options.focus,
+    segments,
+    ranges,
+    frames,
+    framesPerSection,
+  })).digest("hex");
+}
+
+/** Whole timestamped segments around a boundary, with bounded context size. */
+export function neighboringContext(segments: Segment[], range: SectionRange) {
+  const before: Segment[] = [];
+  const after: Segment[] = [];
+  let chars = 0;
+  for (let i = range.from - 1; i >= 0; i--) {
+    const segment = segments[i];
+    const length = formatTranscript([segment]).length + 1;
+    if (segment.end < range.start - 120 || chars + length > 6000) break;
+    before.unshift(segment);
+    chars += length;
+  }
+  chars = 0;
+  for (let i = range.to; i < segments.length; i++) {
+    const segment = segments[i];
+    const length = formatTranscript([segment]).length + 1;
+    if (segment.start >= range.end + 60 || chars + length > 3000) break;
+    after.push(segment);
+    chars += length;
+  }
+  return { before: formatTranscript(before), after: formatTranscript(after) };
+}
+
 export async function analyzeSections(ctx: Ctx, ranges: SectionRange[]): Promise<SectionAnalysis[]> {
   const { lecture, segments } = ctx;
   const dir = lectureDir(lecture.id, "sections");
   fs.mkdirSync(dir, { recursive: true });
-  const cacheKey = `${lecture.options.analysis.provider}:${lecture.options.analysis.model}:${ranges.length}`;
+  const framesBySection = ranges.map(r => pickFrames(ctx.frames, r.start, r.end, ctx.framesPerSection));
+  const frameInputs = [...new Map(framesBySection.flat().map(f => [f.file, f])).values()].map(f => ({
+    ...f,
+    hash: createHash("sha256").update(fs.readFileSync(lectureDir(lecture.id, "frames", f.file))).digest("hex"),
+  }));
+  const cacheKey = sectionCacheKey(lecture, segments, ranges, frameInputs, ctx.framesPerSection);
   const keyFile = path.join(dir, "key.txt");
   if (!fs.existsSync(keyFile) || fs.readFileSync(keyFile, "utf8") !== cacheKey) {
     fs.rmSync(dir, { recursive: true, force: true });
@@ -97,9 +150,8 @@ export async function analyzeSections(ctx: Ctx, ranges: SectionRange[]): Promise
     if (cached) return cached;
 
     const segs = segments.slice(r.from, r.to);
-    const prevTail = r.from > 0 ? segments.slice(Math.max(0, r.from - 3), r.from).map((s) => s.text).join(" ") : "";
-    const nextHead = r.to < segments.length ? segments.slice(r.to, r.to + 3).map((s) => s.text).join(" ") : "";
-    const frames = pickFrames(ctx.frames, r.start, r.end, ctx.framesPerSection);
+    const context = neighboringContext(segments, r);
+    const frames = framesBySection[i];
     const images: LLMImage[] = frames.map((f) => ({
       mime: "image/jpeg",
       data: fs.readFileSync(lectureDir(lecture.id, "frames", f.file)).toString("base64"),
@@ -111,9 +163,10 @@ export async function analyzeSections(ctx: Ctx, ranges: SectionRange[]): Promise
       lecture.options.focus ? `Note from the student about this lecture: ${lecture.options.focus}` : "",
       `This is part ${i + 1} of ${ranges.length}, covering [${fmtTime(r.start)}]–[${fmtTime(r.end)}] of a ${fmtTime(lecture.durationSec)} lecture.`,
       images.length ? `${images.length} frames captured from the video during this part are attached above.` : "",
-      prevTail ? `(Context — the previous part ended with: "${prevTail}")` : "",
+      "Analyze only the current transcript below. Neighboring context helps resolve terminology and relationships; do not summarize it as content of this part or cite its timestamps for this part's takeaways.",
+      context.before ? `<previous-context>\n${context.before}\n</previous-context>` : "",
       `<transcript>\n${formatTranscript(segs)}\n</transcript>`,
-      nextHead ? `(Context — the next part begins with: "${nextHead}")` : "",
+      context.after ? `<next-context>\n${context.after}\n</next-context>` : "",
     ]
       .filter(Boolean)
       .join("\n\n");
@@ -145,7 +198,7 @@ export async function analyzeSections(ctx: Ctx, ranges: SectionRange[]): Promise
   });
 }
 
-function sectionDigest(s: SectionAnalysis) {
+export function sectionDigest(s: SectionAnalysis) {
   return [
     `### Part ${s.index + 1}: ${s.title} [${fmtTime(s.start)}–${fmtTime(s.end)}] (starts at ${Math.round(s.start)}s)`,
     s.summary,
@@ -153,6 +206,10 @@ function sectionDigest(s: SectionAnalysis) {
     ...s.keyPoints.map((k) => `- [${fmtTime(k.time)}] (${Math.round(k.time)}s) ${k.point}`),
     "Concepts:",
     ...s.concepts.map((c) => `- ${c.term}: ${c.definition}`),
+    "Conceptual bottlenecks and explanations:",
+    ...s.difficult.map(d => `- [${fmtTime(d.time)}] ${d.topic}\n  Why this is difficult: ${d.why}\n${d.explanation}`),
+    "Applications and reasoning checks:",
+    ...s.cards.map(c => `- [${fmtTime(c.time)}] ${c.front}\n  ${c.back}`),
   ].join("\n");
 }
 
