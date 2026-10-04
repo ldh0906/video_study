@@ -1,0 +1,375 @@
+@import "tailwindcss";
+@import "pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css";
+@import "katex/dist/katex.min.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --bg: #f7f6f2;
+  --surface: #ffffff;
+  --surface-2: #f2f0ea;
+  --surface-3: #e9e6de;
+  --border: #e5e2d9;
+  --border-strong: #d4d0c5;
+  --text: #1c1b18;
+  --muted: #6c685f;
+  --faint: #9f9b91;
+  --accent: #5b5bd6;
+  --accent-strong: #4646bd;
+  --accent-soft: rgba(91, 91, 214, 0.09);
+  --accent-fg: #ffffff;
+  --highlight: #fbf0d4;
+  --success: #2f8f5b;
+  --success-soft: rgba(47, 143, 91, 0.1);
+  --danger: #c4453c;
+  --danger-soft: rgba(196, 69, 60, 0.09);
+  --warning: #b7791f;
+  --warning-soft: rgba(183, 121, 31, 0.1);
+  --shadow: 0 1px 2px rgba(28, 27, 24, 0.04), 0 4px 16px -4px rgba(28, 27, 24, 0.06);
+  --shadow-lg: 0 2px 6px rgba(28, 27, 24, 0.05), 0 24px 48px -12px rgba(28, 27, 24, 0.16);
+  color-scheme: light;
+}
+
+.dark {
+  --bg: #111110;
+  --surface: #191917;
+  --surface-2: #21201e;
+  --surface-3: #2a2926;
+  --border: #2c2b28;
+  --border-strong: #3b3a36;
+  --text: #ecebe5;
+  --muted: #a29f96;
+  --faint: #6f6c65;
+  --accent: #8d8df2;
+  --accent-strong: #a5a5f7;
+  --accent-soft: rgba(141, 141, 242, 0.12);
+  --accent-fg: #111110;
+  --highlight: rgba(234, 190, 92, 0.16);
+  --success: #5cc48b;
+  --success-soft: rgba(92, 196, 139, 0.12);
+  --danger: #ec7a70;
+  --danger-soft: rgba(236, 122, 112, 0.12);
+  --warning: #e3ab52;
+  --warning-soft: rgba(227, 171, 82, 0.12);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px -4px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.3), 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-fg: var(--accent-fg);
+  --color-highlight: var(--highlight);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --shadow-soft: var(--shadow);
+  --shadow-float: var(--shadow-lg);
+  --font-sans: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", sans-serif;
+  --font-serif: "Noto Serif KR", "Iowan Old Style", Georgia, serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, Consolas, monospace;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss05", "tnum" 0;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- reading typography for generated notes ---------- */
+.prose-study {
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--text);
+}
+.prose-study > * + * {
+  margin-top: 0.85em;
+}
+.prose-study h1,
+.prose-study h2,
+.prose-study h3,
+.prose-study h4 {
+  font-weight: 650;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  margin-top: 1.6em;
+}
+.prose-study h1 {
+  font-size: 1.45em;
+}
+.prose-study h2 {
+  font-size: 1.25em;
+}
+.prose-study h3 {
+  font-size: 1.08em;
+}
+.prose-study h4 {
+  font-size: 1em;
+  color: var(--muted);
+}
+.prose-study > :first-child {
+  margin-top: 0;
+}
+.prose-study strong {
+  font-weight: 650;
+  color: var(--text);
+}
+.prose-study a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 35%, transparent);
+}
+.prose-study ul,
+.prose-study ol {
+  padding-left: 1.35em;
+}
+.prose-study ul {
+  list-style: disc;
+}
+.prose-study ol {
+  list-style: decimal;
+}
+.prose-study li + li {
+  margin-top: 0.3em;
+}
+.prose-study li > ul,
+.prose-study li > ol {
+  margin-top: 0.3em;
+}
+.prose-study li::marker {
+  color: var(--faint);
+}
+.prose-study blockquote {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 0.6em 1em;
+  border-radius: 0 10px 10px 0;
+  color: var(--text);
+}
+.prose-study code:not(pre code) {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 0.1em 0.38em;
+  border-radius: 6px;
+}
+.prose-study pre {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px 16px;
+  overflow-x: auto;
+}
+.prose-study table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 0.93em;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+  display: block;
+  overflow-x: auto;
+}
+.prose-study th {
+  background: var(--surface-2);
+  font-weight: 600;
+  text-align: left;
+}
+.prose-study th,
+.prose-study td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+.prose-study tr:last-child td {
+  border-bottom: 0;
+}
+.prose-study hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 1.8em 0;
+}
+.prose-study .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.4em 0;
+}
+.prose-study .katex {
+  font-size: 1.06em;
+}
+
+/* highlight.js — quiet palette that works on both themes */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in {
+  color: #7c5cc4;
+}
+.hljs-string,
+.hljs-attr {
+  color: #2f8f5b;
+}
+.hljs-number,
+.hljs-literal {
+  color: #b7791f;
+}
+.hljs-comment {
+  color: var(--faint);
+  font-style: italic;
+}
+.hljs-title,
+.hljs-function {
+  color: #3b6fd4;
+}
+.dark .hljs-keyword,
+.dark .hljs-selector-tag,
+.dark .hljs-built_in {
+  color: #b9a3f5;
+}
+.dark .hljs-string,
+.dark .hljs-attr {
+  color: #7fd3a2;
+}
+.dark .hljs-number,
+.dark .hljs-literal {
+  color: #ebc07a;
+}
+.dark .hljs-title,
+.dark .hljs-function {
+  color: #8fb4ff;
+}
+
+/* markmap */
+.markmap-wrap svg {
+  width: 100%;
+  height: 100%;
+}
+.markmap-wrap .markmap-foreign {
+  color: var(--text);
+  font-family: var(--font-sans);
+}
+.markmap-wrap .markmap-node > line,
+.markmap-wrap .markmap-node circle {
+  stroke-width: 1.5;
+}
+
+/* flashcard flip */
+.flip-scene {
+  perspective: 1600px;
+}
+.flip-card {
+  transform-style: preserve-3d;
+  transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.flip-card.is-flipped {
+  transform: rotateY(180deg);
+}
+.flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-back {
+  transform: rotateY(180deg);
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, color-mix(in srgb, var(--accent) 18%, transparent) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.8s linear infinite;
+}
+
+@keyframes caret {
+  50% {
+    opacity: 0;
+  }
+}
+.stream-caret::after,
+.is-streaming > :last-child::after {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.12em;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: caret 1s steps(1) infinite;
+}
+
+@media print {
+  body {
+    background: white;
+  }
+  .no-print {
+    display: none !important;
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes popIn {
+  from {
+    opacity: 0;
+    transform: translate(var(--tw-translate-x, 0), var(--tw-translate-y, 0)) scale(0.97);
+  }
+}
