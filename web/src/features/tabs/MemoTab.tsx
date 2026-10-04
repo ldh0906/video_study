@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Check, Clock, Eye, Pencil } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, Clock, Eye, FileUp, Pencil } from "lucide-react";
+import { toast } from "sonner";
 import { fmtTime } from "@shared/time";
 import type { Lecture } from "@shared/types";
 import { Markdown } from "@/components/Markdown";
@@ -16,6 +17,23 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
   const loaded = useRef(false);
   const ta = useRef<HTMLTextAreaElement>(null);
   const lastAppend = useRef(0);
+  const fileInput = useRef<HTMLInputElement>(null);
+  const qc = useQueryClient();
+
+  // A typed-in study-book PDF comes back as notes appended on the server; reload them here.
+  const importPdf = async (file: File) => {
+    try {
+      if (!saved) await api.saveNotes(lecture.id, content);
+      const r = await api.importPdf(lecture.id, file);
+      const fresh = await qc.fetchQuery({ queryKey: ["notes", lecture.id], queryFn: () => api.notes(lecture.id) });
+      setContent(fresh.content);
+      setSaved(true);
+      if (r.imported) toast.success(`PDF에서 메모 ${r.imported}개를 가져왔습니다`);
+      else toast.info("가져올 입력 내용이 없습니다", { description: "타이핑용 학습서에서 입력한 칸만 가져옵니다." });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
+  };
 
   useEffect(() => {
     if (isSuccess && !loaded.current) {
@@ -72,6 +90,20 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
           </Button>
         ) : null}
         <div className="flex-1" />
+        <Button size="sm" variant="ghost" onClick={() => fileInput.current?.click()} title="타이핑용 학습서 PDF에 입력한 내용을 메모로 가져옵니다">
+          <FileUp className="size-3.5" /> PDF 메모 가져오기
+        </Button>
+        <input
+          ref={fileInput}
+          type="file"
+          accept="application/pdf,.pdf"
+          hidden
+          onChange={(e) => {
+            const f = e.target.files?.[0];
+            if (f) importPdf(f);
+            e.target.value = "";
+          }}
+        />
         <span className="flex items-center gap-1 text-xs text-faint">{saved ? <><Check className="size-3.5" /> 저장됨</> : "저장 중…"}</span>
       </div>
       {mode === "edit" ? (

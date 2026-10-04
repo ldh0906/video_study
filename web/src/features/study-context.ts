@@ -14,6 +14,8 @@ export interface StudyContextValue {
   addToMemo: (text: string, time?: number | null) => void;
   /** open the add-card dialog prefilled */
   makeCard: (front: string, back?: string, time?: number | null) => void;
+  /** open the study-book PDF export dialog */
+  openExport: () => void;
 }
 
 export const StudyContext = createContext<StudyContextValue | null>(null);

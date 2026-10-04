@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from "react";
-import { Crosshair, Download, FileText, Printer, Sparkle } from "lucide-react";
+import { Crosshair, Download, FileDown, FileText, Sparkle } from "lucide-react";
 import { fmtTime } from "@shared/time";
 import type { Analysis, Lecture } from "@shared/types";
 import { Markdown, TimeChip } from "@/components/Markdown";
@@ -8,9 +8,11 @@ import { api } from "@/lib/api";
 import { usePlayerSecond } from "@/lib/player";
 import { cn } from "@/lib/utils";
 import { SelectionActions } from "../SelectionActions";
+import { useStudy } from "../study-context";
 
 export function NotesTab({ lecture, analysis, scroller }: { lecture: Lecture; analysis: Analysis; scroller: React.RefObject<HTMLDivElement | null> }) {
   const second = usePlayerSecond();
+  const { openExport } = useStudy();
   const chapters = analysis.overview.chapters;
   const grouped = useMemo(
     () =>
@@ -95,8 +97,8 @@ export function NotesTab({ lecture, analysis, scroller }: { lecture: Lecture; an
         <Button size="sm" variant="ghost" onClick={() => window.open(api.exportUrl(lecture.id, "md"))}>
           <Download className="size-3.5" /> Markdown
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => window.print()}>
-          <Printer className="size-3.5" /> 인쇄·PDF
+        <Button size="sm" variant="soft" onClick={openExport}>
+          <FileDown className="size-3.5" /> 학습서 PDF
         </Button>
       </div>
 

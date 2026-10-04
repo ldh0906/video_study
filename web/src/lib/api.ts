@@ -1,6 +1,9 @@
 import type {
   Analysis,
   ChatMessage,
+  ExportFile,
+  ExportOptions,
+  ExportResult,
   Flashcard,
   Frame,
   GradeResult,
@@ -93,6 +96,18 @@ export const api = {
 
   chat: (id: string) => req<ChatMessage[]>("GET", L(id, "/chat")),
   clearChat: (id: string) => req("DELETE", L(id, "/chat")),
+
+  exportPdf: (id: string, options: ExportOptions) => req<ExportResult>("POST", L(id, "/exports"), options),
+  exports: (id: string) => req<ExportFile[]>("GET", L(id, "/exports")),
+  deleteExport: (id: string, file: string) => req("DELETE", L(id, `/exports/${encodeURIComponent(file)}`)),
+  exportFileUrl: (id: string, file: string, download = false) => L(id, `/exports/${encodeURIComponent(file)}${download ? "?download=1" : ""}`),
+  printUrl: (id: string, options: ExportOptions) => L(id, `/print?o=${btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(options)))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`),
+  importPdf: async (id: string, file: File) => {
+    const res = await fetch(L(id, "/exports/import"), { method: "POST", body: file });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error((data as { error?: string }).error ?? `요청 실패 (${res.status})`);
+    return data as { imported: number; checked: number; labels: string[] };
+  },
 
   mediaUrl: (id: string) => L(id, "/media"),
   thumbUrl: (id: string, v?: number) => L(id, `/thumb${v ? `?v=${v}` : ""}`),

@@ -6,13 +6,16 @@ import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { MODEL_CATALOG, effortOptions } from "../shared/catalog";
+import { presetOptions } from "../shared/export";
 import { fmtTime } from "../shared/time";
-import type { Flashcard, Lecture, LectureOptions, MaterialKind, ModelChoice, ModelOption, Provider, Settings, ToolStatus, WhisperModel } from "../shared/types";
+import type { ExportFile, ExportOptions, Flashcard, Lecture, LectureOptions, MaterialKind, ModelChoice, ModelOption, Provider, Settings, ToolStatus, WhisperModel } from "../shared/types";
+import { buildDocument } from "./export/document";
+import { exportStudyPdf, exportsDir, readFilledPdf } from "./export/pdf";
 import { generateText, LLMError } from "./llm";
 import { listAnthropicModels } from "./llm/anthropic";
 import { cliStatus, codexModels } from "./llm/cli";
 import { listOpenAIModels } from "./llm/openai";
-import { DATA_DIR, WEB_DIST, lectureDir } from "./paths";
+import { DATA_DIR, ROOT, WEB_DIST, lectureDir } from "./paths";
 import { cancel, enqueue, isBusy, recoverOnBoot, resetAnalysis, resetTranscript } from "./pipeline";
 import { getSettings, publicSettings, saveSettings } from "./settings";
 import { deleteLecture, docs, freshSteps, getLecture, listLectures, newId, saveLecture, updateLecture } from "./store";
@@ -21,6 +24,8 @@ import { FFMPEG, ffmpegVersion } from "./tools/ffmpeg";
 import { installYtdlp, resolveYtdlp } from "./tools/ytdlp";
 import { WHISPER_MODELS, downloads, installModel, installWhisper, resolveWhisper, whisperStatus } from "./tools/whisper";
 
+const port = Number(process.env.LECTURE_API_PORT ?? 5178);
+const ORIGIN = `http://127.0.0.1:${port}`;
 const UPLOADS = path.join(DATA_DIR, "uploads");
 fs.mkdirSync(UPLOADS, { recursive: true });
 
@@ -452,6 +457,115 @@ app.get("/api/lectures/:id/export", (c) => {
   });
 });
 
+// --- study-book PDF ------------------------------------------------------------------
+
+const PRINT_ASSETS: Record<string, string> = {
+  fonts: path.join(ROOT, "node_modules", "pretendard", "dist", "web", "static", "woff2"),
+  katex: path.join(ROOT, "node_modules", "katex", "dist"),
+};
+
+app.get("/print-assets/:kind/*", (c) => {
+  const base = PRINT_ASSETS[c.req.param("kind")];
+  const rel = decodeURIComponent(new URL(c.req.url).pathname).split(`/print-assets/${c.req.param("kind")}/`)[1] ?? "";
+  const file = base && path.normalize(path.join(base, rel));
+  if (!file || !file.startsWith(base) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return c.json({ error: "not found" }, 404);
+  const type = { ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf", ".css": "text/css" }[path.extname(file)] ?? "application/octet-stream";
+  return c.body(fs.readFileSync(file), 200, { "Content-Type": type, "Cache-Control": "max-age=86400" });
+});
+
+function exportOptions(l: Lecture, raw: Partial<ExportOptions> | undefined): ExportOptions {
+  const base = presetOptions(raw?.preset ?? "full", docs.materials.get(l.id));
+  const o = { ...base, ...raw };
+  o.blankPages = Math.min(20, Math.max(0, Math.round(Number(o.blankPages) || 0)));
+  o.materials = Array.isArray(o.materials) ? o.materials : base.materials;
+  return o;
+}
+
+/** The print HTML that Edge/Chrome lays out — also handy to preview in a browser. */
+app.get("/api/lectures/:id/print", async (c) => {
+  const l = must(c.req.param("id"));
+  const analysis = docs.analysis.get(l.id);
+  if (!analysis) return c.text("아직 분석이 끝나지 않았습니다.", 400);
+  let raw: Partial<ExportOptions> | undefined;
+  try {
+    const q = c.req.query("o");
+    raw = q ? JSON.parse(Buffer.from(q, "base64url").toString("utf8")) : undefined;
+  } catch {
+    raw = undefined;
+  }
+  const { html } = await buildDocument({
+    lecture: l,
+    analysis,
+    options: exportOptions(l, raw),
+    cards: docs.flashcards.get(l.id),
+    quizzes: docs.quizzes.get(l.id),
+    materials: docs.materials.get(l.id),
+    memo: docs.notes.get(l.id),
+    transcript: docs.transcript.get(l.id),
+    frames: docs.frames.get(l.id) ?? [],
+    origin: ORIGIN,
+  });
+  return c.html(html);
+});
+
+app.post("/api/lectures/:id/exports", async (c) => {
+  const l = must(c.req.param("id"));
+  const analysis = docs.analysis.get(l.id);
+  if (!analysis) return c.json({ error: "아직 분석이 끝나지 않았습니다." }, 400);
+  const raw = (await c.req.json().catch(() => ({}))) as Partial<ExportOptions>;
+  const result = await exportStudyPdf(l, analysis.overview.title || l.title, exportOptions(l, raw), ORIGIN, (s) => console.log(`[pdf ${l.id}] ${s}`));
+  return c.json(result);
+});
+
+app.get("/api/lectures/:id/exports", (c) => {
+  const dir = exportsDir(must(c.req.param("id")).id);
+  if (!fs.existsSync(dir)) return c.json([]);
+  const files: ExportFile[] = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith(".pdf"))
+    .map((f) => {
+      const st = fs.statSync(path.join(dir, f));
+      return { file: f, bytes: st.size, createdAt: st.mtimeMs };
+    })
+    .sort((a, b) => b.createdAt - a.createdAt);
+  return c.json(files);
+});
+
+app.get("/api/lectures/:id/exports/:file", (c) => {
+  const dir = exportsDir(must(c.req.param("id")).id);
+  const name = path.basename(c.req.param("file"));
+  const file = path.join(dir, name);
+  if (!name.endsWith(".pdf") || !fs.existsSync(file)) return c.json({ error: "파일이 없습니다." }, 404);
+  const disposition = c.req.query("download") ? "attachment" : "inline";
+  return c.body(fs.readFileSync(file), 200, {
+    "Content-Type": "application/pdf",
+    "Content-Disposition": `${disposition}; filename*=UTF-8''${encodeURIComponent(name)}`,
+  });
+});
+
+app.delete("/api/lectures/:id/exports/:file", (c) => {
+  const dir = exportsDir(must(c.req.param("id")).id);
+  fs.rmSync(path.join(dir, path.basename(c.req.param("file"))), { force: true });
+  return c.json({ ok: true });
+});
+
+/** Upload a study-book PDF the student typed into; its fields become a memo entry. */
+app.post("/api/lectures/:id/exports/import", async (c) => {
+  const l = must(c.req.param("id"));
+  const bytes = new Uint8Array(await c.req.arrayBuffer());
+  if (!bytes.length) return c.json({ error: "PDF 파일이 비어 있습니다." }, 400);
+  const { texts, checked } = await readFilledPdf(l.id, bytes).catch(() => {
+    throw Object.assign(new Error("PDF를 읽지 못했습니다. Lecture Lens에서 만든 타이핑용 학습서인지 확인해 주세요."), { status: 400 });
+  });
+  if (texts.length) {
+    const when = new Date().toLocaleString("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+    const block = [`## 📄 PDF에서 가져온 메모 · ${when}`, ...texts.map((t) => `### ${t.label}\n\n${t.text}`)].join("\n\n");
+    const memo = docs.notes.get(l.id).trimEnd();
+    docs.notes.set(l.id, `${memo}${memo ? "\n\n" : ""}${block}\n`);
+  }
+  return c.json({ imported: texts.length, checked, labels: texts.map((t) => t.label) });
+});
+
 // --- static web app (production) ------------------------------------------------------
 
 const MIME: Record<string, string> = {
@@ -480,7 +594,6 @@ app.get("*", (c) => {
 });
 
 recoverOnBoot();
-const port = Number(process.env.LECTURE_API_PORT ?? 5178);
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, () => {
   console.log(`\n  Lecture Lens API  →  http://localhost:${port}\n`);
 });

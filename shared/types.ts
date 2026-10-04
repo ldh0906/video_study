@@ -278,3 +278,54 @@ export interface GradeResult {
   verdict: "correct" | "partial" | "incorrect";
   feedback: string;
 }
+
+// --- study-book PDF export ---------------------------------------------------
+
+export type ExportPreset = "full" | "guided" | "review" | "workbook";
+
+export interface ExportOptions {
+  preset: ExportPreset;
+  /** margin: wide note column · cornell: cue/notes/summary · compact: paper-saving */
+  layout: "margin" | "cornell" | "compact";
+  paper: "A4" | "B5";
+  /** add fillable AcroForm fields (typing edition) */
+  fields: boolean;
+  /** include section notes at all (off for a pure workbook) */
+  notes: boolean;
+  /** full notes, or key points only */
+  depth: "full" | "key";
+  /** guided notes: blank out bolded key terms */
+  blanks: "off" | "some" | "all";
+  cover: boolean;
+  guide: boolean;
+  overview: boolean;
+  toc: boolean;
+  checks: boolean;
+  summaryBox: boolean;
+  recall: boolean;
+  frames: boolean;
+  qr: boolean;
+  quiz: boolean;
+  glossary: boolean;
+  conceptMap: boolean;
+  /** ids of generated materials to include */
+  materials: string[];
+  cards: boolean;
+  memo: boolean;
+  transcript: boolean;
+  blankPages: number;
+}
+
+export interface ExportResult {
+  file: string;
+  pages: number;
+  bytes: number;
+  fields: number;
+  ms: number;
+}
+
+export interface ExportFile {
+  file: string;
+  bytes: number;
+  createdAt: number;
+}

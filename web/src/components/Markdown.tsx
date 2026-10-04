@@ -6,25 +6,10 @@ import remarkCjkFriendly from "remark-cjk-friendly";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import { Play } from "lucide-react";
-import { TIMESTAMP_RE, fmtTime, parseTime } from "@shared/time";
+import { preprocessMarkdown } from "@shared/markdown";
+import { fmtTime } from "@shared/time";
 import { player } from "@/lib/player";
 import { cn } from "@/lib/utils";
-
-/** Turn [12:34] into seek links and normalise \( \) / \[ \] math delimiters, leaving code untouched. */
-function preprocess(md: string) {
-  return md
-    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-    .map((part, i) => {
-      if (i % 2 === 1) return part;
-      return part
-        .replace(/\\\[([\s\S]+?)\\\]/g, (_, m) => `\n$$\n${m.trim()}\n$$\n`)
-        .replace(/\\\(([\s\S]+?)\\\)/g, (_, m) => `$${m.trim()}$`)
-        .replace(TIMESTAMP_RE, (whole, t: string, offset: number, str: string) =>
-          str[offset + whole.length] === "(" ? whole : `[${t}](#t=${parseTime(t)})`,
-        );
-    })
-    .join("");
-}
 
 export function TimeChip({ time, className, children }: { time: number; className?: string; children?: ReactNode }) {
   return (
@@ -66,7 +51,7 @@ export const Markdown = memo(function Markdown({ children, className, streaming 
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }], [rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         components={components}
       >
-        {preprocess(children)}
+        {preprocessMarkdown(children)}
       </ReactMarkdown>
     </div>
   );

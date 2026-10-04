@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
@@ -18,6 +18,7 @@ import {
   Sparkles,
   Trash2,
   Captions,
+  FileDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fmtTime } from "@shared/time";
@@ -29,6 +30,7 @@ import { ChapterStrip, Player } from "@/features/Player";
 import { ProcessingPanel } from "@/features/ProcessingPanel";
 import { StudyContext, type StudyContextValue, type TabId } from "@/features/study-context";
 import { TranscriptPanel } from "@/features/TranscriptPanel";
+import { ExportDialog } from "@/features/ExportDialog";
 import { CardEditor, useCards } from "@/features/tabs/CardsTab";
 import { CardsTab } from "@/features/tabs/CardsTab";
 import { ChatTab } from "@/features/tabs/ChatTab";
@@ -98,10 +100,27 @@ export function LectureView() {
   const [memoAppend, setMemoAppend] = useState<{ text: string; time: number | null; n: number } | null>(null);
   const [cardDraft, setCardDraft] = useState<{ front: string; back: string; time: number | null } | null>(null);
   const [reprocessOpen, setReprocessOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
   const tabScroller = useRef<HTMLDivElement>(null);
 
   // stopping playback when leaving the page
   useEffect(() => () => player.media?.pause(), []);
+
+  // ?t=123 (links printed in study-book PDFs) → jump to that moment once the media is loaded
+  const [searchParams] = useSearchParams();
+  const startAt = Number(searchParams.get("t"));
+  useEffect(() => {
+    if (!startAt || !lecture?.mediaPath) return;
+    let tries = 0;
+    const t = setInterval(() => {
+      const m = player.media;
+      if ((m && m.readyState >= 1) || ++tries > 50) {
+        clearInterval(t);
+        if (m) player.seek(startAt, false);
+      }
+    }, 200);
+    return () => clearInterval(t);
+  }, [startAt, lecture?.mediaPath]);
 
   useEffect(() => {
     if (lecture?.status === "ready") {
@@ -132,6 +151,7 @@ export function LectureView() {
               toast.success("메모에 추가했습니다");
             },
             makeCard: (front, back = "", time = null) => setCardDraft({ front, back, time }),
+            openExport: () => setExportOpen(true),
           }
         : null,
     [lecture, analysis, tab, setTab],
@@ -216,7 +236,7 @@ export function LectureView() {
   return (
     <StudyContext.Provider value={ctx}>
       <div className="flex h-full flex-col">
-        <LectureHeader lecture={lecture} onReprocess={() => setReprocessOpen(true)} onSettings={() => openSettings()} />
+        <LectureHeader lecture={lecture} onReprocess={() => setReprocessOpen(true)} onSettings={() => openSettings()} onExport={() => setExportOpen(true)} />
         {wide ? (
           <SplitPane left={left} right={right} />
         ) : (
@@ -228,6 +248,7 @@ export function LectureView() {
       </div>
       <CardEditor lecture={lecture} card={cardDraft} onClose={() => setCardDraft(null)} />
       <ReprocessDialog lecture={lecture} open={reprocessOpen} onOpenChange={setReprocessOpen} />
+      {lecture.analyzed ? <ExportDialog lecture={lecture} open={exportOpen} onOpenChange={setExportOpen} /> : null}
     </StudyContext.Provider>
   );
 }
@@ -271,7 +292,7 @@ function SplitPane({ left, right }: { left: ReactNode; right: ReactNode }) {
   );
 }
 
-function LectureHeader({ lecture, onReprocess, onSettings }: { lecture: Lecture; onReprocess: () => void; onSettings: () => void }) {
+function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture: Lecture; onReprocess: () => void; onSettings: () => void; onExport: () => void }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -315,6 +336,11 @@ function LectureHeader({ lecture, onReprocess, onSettings }: { lecture: Lecture;
           </button>
         )}
       </div>
+      {lecture.analyzed ? (
+        <Button size="sm" variant="soft" onClick={onExport} className="hidden sm:inline-flex">
+          <FileDown className="size-3.5" /> 학습서 PDF
+        </Button>
+      ) : null}
       <ThemeMenu />
       <Menu
         trigger={
@@ -325,6 +351,9 @@ function LectureHeader({ lecture, onReprocess, onSettings }: { lecture: Lecture;
       >
         {lecture.analyzed ? (
           <>
+            <MenuItem icon={<FileDown />} onSelect={onExport}>
+              학습서 PDF 만들기…
+            </MenuItem>
             <MenuItem icon={<Download />} onSelect={() => window.open(api.exportUrl(lecture.id, "md"))}>
               학습 노트 내보내기 (.md)
             </MenuItem>
