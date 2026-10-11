@@ -180,7 +180,7 @@ export function LectureView() {
   const left = (
     <div className="flex h-full min-h-0 flex-col gap-3">
       {hasMedia ? (
-        <Player lecture={lecture} chapters={chapters} frames={frames} onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)} />
+        <Player lecture={lecture} chapters={chapters} frames={frames} segments={transcript?.segments} onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)} />
       ) : (
         <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface-2 text-sm text-muted">
           <Spinner className="mr-2" /> 영상을 준비하는 중…

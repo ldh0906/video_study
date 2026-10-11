@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Gauge, Maximize, MessageCircleQuestion, Minimize, Pause, Play, RotateCcw, RotateCw, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, Captions, Gauge, Maximize, MessageCircleQuestion, Minimize, Pause, Play, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from "lucide-react";
 import { fmtTime } from "@shared/time";
-import type { Chapter, Frame, Lecture } from "@shared/types";
+import type { Chapter, Frame, Lecture, Segment } from "@shared/types";
 import { Popover, Tooltip } from "@/components/ui";
 import { api } from "@/lib/api";
 import { player, usePlayer } from "@/lib/player";
@@ -23,19 +23,90 @@ function nearestFrame(frames: Frame[], t: number) {
   return best;
 }
 
-export function Player({ lecture, chapters, frames, onAsk }: { lecture: Lecture; chapters: Chapter[]; frames: Frame[]; onAsk: (t: number) => void }) {
+function activeSegment(segments: Segment[], t: number) {
+  let lo = 0;
+  let hi = segments.length - 1;
+  let best: Segment | undefined;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (segments[mid].start <= t) {
+      best = segments[mid];
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
+  return best && t < best.end ? best : undefined;
+}
+
+const CUE_MAX = 80;
+
+/** Split a long cue into caption-sized phrases: sentences first, then words. */
+function splitCue(text: string) {
+  if (text.length <= CUE_MAX) return [text];
+  const out: string[] = [];
+  let cur = "";
+  const push = (piece: string) => {
+    if (cur && (cur + piece).length > CUE_MAX) {
+      out.push(cur.trim());
+      cur = "";
+    }
+    cur += piece;
+  };
+  for (const sentence of text.match(/[^.!?。？！]+[.!?。？！]*\s*/g) ?? [text]) {
+    if (sentence.length <= CUE_MAX) push(sentence);
+    else for (const word of sentence.split(/(?<=\s)/)) push(word);
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out;
+}
+
+/** Text-only transcription models produce 30-second cues; show them a phrase at a time, paced by length. */
+function captionAt(seg: Segment, t: number) {
+  const parts = splitCue(seg.text);
+  if (parts.length === 1) return parts[0];
+  const total = parts.reduce((a, p) => a + p.length, 0);
+  const at = ((t - seg.start) / (seg.end - seg.start || 1)) * total;
+  let acc = 0;
+  for (const part of parts) {
+    acc += part.length;
+    if (at < acc) return part;
+  }
+  return parts.at(-1)!;
+}
+
+export function Player({
+  lecture,
+  chapters,
+  frames,
+  segments: cues = [],
+  onAsk,
+}: {
+  lecture: Lecture;
+  chapters: Chapter[];
+  frames: Frame[];
+  segments?: Segment[];
+  onAsk: (t: number) => void;
+}) {
   const wrap = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<HTMLVideoElement & HTMLAudioElement>(null);
   const time = usePlayer((s) => s.time);
   const duration = usePlayer((s) => s.duration) || lecture.durationSec;
   const playing = usePlayer((s) => s.playing);
   const [speed, setSpeed] = useState(() => Number(localStorage.getItem("speed") ?? 1) || 1);
-  const [muted, setMuted] = useState(false);
+  const [volume, setVolume] = useState(() => {
+    const v = Number(localStorage.getItem("volume") ?? 1);
+    return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+  });
+  const [muted, setMuted] = useState(() => localStorage.getItem("muted") === "1");
+  const [captions, setCaptions] = useState(() => localStorage.getItem("captions") === "1");
+  const [flash, setFlash] = useState<string | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pointerInside = useRef(false);
   const video = lecture.hasVideo;
+  const hasCaptions = cues.length > 0;
 
   useEffect(() => {
     player.attach(mediaRef.current);
@@ -48,6 +119,34 @@ export function Player({ lecture, chapters, frames, onAsk }: { lecture: Lecture;
       localStorage.setItem("speed", String(speed));
     } catch {}
   }, [speed]);
+
+  useEffect(() => {
+    if (mediaRef.current) mediaRef.current.volume = volume;
+    try {
+      localStorage.setItem("volume", String(volume));
+      localStorage.setItem("muted", muted ? "1" : "0");
+      localStorage.setItem("captions", captions ? "1" : "0");
+    } catch {}
+  }, [volume, muted, captions, lecture.mediaPath]);
+
+  const showFlash = (text: string) => {
+    setFlash(text);
+    if (flashTimer.current) clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setFlash(null), 700);
+  };
+
+  const changeVolume = (v: number) => {
+    const next = Math.round(Math.min(1, Math.max(0, v)) * 100) / 100;
+    setVolume(next);
+    setMuted(next === 0);
+    return next;
+  };
+
+  const toggleMute = () => {
+    // unmuting from a zero volume should make sound again, as YouTube does
+    if (muted && volume === 0) changeVolume(0.5);
+    else setMuted((v) => !v);
+  };
 
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === wrap.current);
@@ -69,14 +168,22 @@ export function Player({ lecture, chapters, frames, onAsk }: { lecture: Lecture;
       else if (e.key === "ArrowLeft") player.seek(m.currentTime - 5, !m.paused);
       else if (e.key === "ArrowRight") player.seek(m.currentTime + 5, !m.paused);
       else if (k === "f" && video) toggleFullscreen();
-      else if (k === "m") setMuted((v) => !v);
-      else if (e.key === ">" || e.key === ".") setSpeed((s) => SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(s) + 1)] ?? s);
+      else if (k === "m") toggleMute();
+      else if (k === "c" && hasCaptions) {
+        setCaptions((v) => !v);
+        showFlash(captions ? "자막 끔" : "자막 켬");
+      } else if ((e.key === "ArrowUp" || e.key === "ArrowDown") && (pointerInside.current || document.fullscreenElement === wrap.current)) {
+        // only while over the player, so arrow keys still scroll the notes elsewhere
+        e.preventDefault();
+        const next = changeVolume((muted ? 0 : volume) + (e.key === "ArrowUp" ? 0.05 : -0.05));
+        showFlash(`볼륨 ${Math.round(next * 100)}%`);
+      } else if (e.key === ">" || e.key === ".") setSpeed((s) => SPEEDS[Math.min(SPEEDS.length - 1, SPEEDS.indexOf(s) + 1)] ?? s);
       else if (e.key === "<" || e.key === ",") setSpeed((s) => SPEEDS[Math.max(0, SPEEDS.indexOf(s) - 1)] ?? s);
       else return;
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [video]);
+  }, [video, hasCaptions, captions, muted, volume]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -101,14 +208,21 @@ export function Player({ lecture, chapters, frames, onAsk }: { lecture: Lecture;
   };
 
   const showControls = !playing || !idle || hover !== null;
+  const cue = captions ? activeSegment(cues, time) : undefined;
+  const caption = cue ? captionAt(cue, time) : "";
+  const audible = muted ? 0 : volume;
 
   return (
     <div
       ref={wrap}
       onMouseMove={poke}
-      onMouseLeave={() => setIdle(true)}
+      onMouseEnter={() => (pointerInside.current = true)}
+      onMouseLeave={() => {
+        pointerInside.current = false;
+        setIdle(true);
+      }}
       className={cn(
-        "group/player relative overflow-hidden bg-black select-none",
+        "group/player @container relative overflow-hidden bg-black select-none",
         fullscreen ? "flex size-full items-center" : "rounded-2xl shadow-float",
         !video && "bg-gradient-to-br from-[#26264a] via-[#1f1f2e] to-[#141416]",
         !showControls && fullscreen && "cursor-none",
@@ -141,6 +255,28 @@ export function Player({ lecture, chapters, frames, onAsk }: { lecture: Lecture;
         >
           <Play className="ml-1 size-7 fill-current" />
         </button>
+      ) : null}
+
+      {caption ? (
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-x-0 flex justify-center px-[6%] transition-[bottom] duration-300",
+            showControls ? "bottom-[4.5rem]" : "bottom-[5%]",
+          )}
+        >
+          <span
+            lang={lecture.options.spokenLanguage || undefined}
+            className="rounded-md bg-black/75 px-[0.6em] py-[0.2em] text-center text-[clamp(13px,2.6cqw,38px)] leading-snug font-medium whitespace-pre-line text-white [box-decoration-break:clone] [text-wrap:balance]"
+          >
+            {caption}
+          </span>
+        </div>
+      ) : null}
+
+      {flash ? (
+        <div className="pointer-events-none absolute top-[12%] left-1/2 -translate-x-1/2 rounded-full bg-black/70 px-4 py-1.5 text-sm font-semibold text-white tabular-nums backdrop-blur">
+          {flash}
+        </div>
       ) : null}
 
       <div
@@ -192,16 +328,37 @@ export function Player({ lecture, chapters, frames, onAsk }: { lecture: Lecture;
           <CtrlButton label="10초 앞으로 (L)" onClick={() => player.seek(time + 10, playing)}>
             <RotateCw className="size-[17px]" />
           </CtrlButton>
-          <span className="hidden sm:contents">
-            <CtrlButton label="음소거 (M)" onClick={() => setMuted((v) => !v)}>
-              {muted ? <VolumeX className="size-[18px]" /> : <Volume2 className="size-[18px]" />}
+          <div className="group/vol hidden items-center sm:flex">
+            <CtrlButton label={muted ? "음소거 해제 (M)" : "음소거 (M)"} onClick={toggleMute}>
+              {audible === 0 ? <VolumeX className="size-[18px]" /> : audible < 0.5 ? <Volume1 className="size-[18px]" /> : <Volume2 className="size-[18px]" />}
             </CtrlButton>
-          </span>
+            <div className="flex w-0 items-center overflow-hidden transition-[width] duration-200 group-hover/vol:w-[84px] focus-within:w-[84px]">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.01}
+                value={audible}
+                onChange={(e) => changeVolume(Number(e.target.value))}
+                aria-label="볼륨 (↑/↓)"
+                className="mx-1.5 h-1 w-[72px] cursor-pointer appearance-none rounded-full [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                style={{ background: `linear-gradient(to right, white ${audible * 100}%, rgb(255 255 255 / 0.3) ${audible * 100}%)` }}
+              />
+            </div>
+          </div>
           <span className="ml-1 text-[12.5px] font-medium whitespace-nowrap text-white/90 tabular-nums">
             {fmtTime(time)} <span className="text-white/50">/ {fmtTime(duration)}</span>
           </span>
           {currentChapter?.title ? <span className="ml-2 hidden min-w-0 truncate text-[12.5px] text-white/70 md:block">· {currentChapter.title}</span> : null}
           <div className="flex-1" />
+          {hasCaptions ? (
+            <CtrlButton label={captions ? "자막 끄기 (C)" : "자막 켜기 (C)"} onClick={() => setCaptions((v) => !v)}>
+              <span className="relative flex">
+                <Captions className={cn("size-[19px]", !captions && "opacity-80")} />
+                <span className={cn("absolute inset-x-0.5 -bottom-1 h-[2px] rounded-full bg-[#a5a5f7] transition-transform", captions ? "scale-x-100" : "scale-x-0")} />
+              </span>
+            </CtrlButton>
+          ) : null}
           <CtrlButton label="이 장면에 대해 질문" onClick={() => onAsk(time)}>
             <MessageCircleQuestion className="size-[18px]" />
           </CtrlButton>
