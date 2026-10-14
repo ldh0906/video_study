@@ -114,7 +114,9 @@ export function ProcessingPanel({ lecture, busy }: { lecture: Lecture; busy: boo
                           ? s.detail ?? ""
                           : running && s.progress > 0
                             ? `${Math.round(s.progress * 100)}%`
-                            : ""}
+                            : s.status === "pending" && lecture.status === "processing"
+                              ? s.detail ?? ""
+                              : ""}
                   </span>
                 </div>
                 {running ? (

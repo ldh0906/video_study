@@ -15,7 +15,50 @@ import { throttle } from "./util";
 
 const queue: string[] = [];
 const running = new Map<string, AbortController>();
-const MAX_PARALLEL = 1;
+
+/**
+ * A FIFO line that one lecture at a time may hold. Lectures run through two
+ * lanes: "media" (download, audio, whisper, frames — the GPU/disk heavy part)
+ * and "ai" (analysis and study materials over the network). The next lecture
+ * can transcribe while the previous one is being analyzed, but two lectures
+ * never fight over the GPU.
+ */
+class Lane {
+  private busy = false;
+  private waiters: { resolve: () => void; signal: AbortSignal; onAbort: () => void }[] = [];
+
+  async acquire(signal: AbortSignal): Promise<() => void> {
+    signal.throwIfAborted();
+    if (this.busy) {
+      await new Promise<void>((resolve, reject) => {
+        const waiter = {
+          resolve,
+          signal,
+          onAbort: () => {
+            this.waiters.splice(this.waiters.indexOf(waiter), 1);
+            reject(new DOMException("aborted", "AbortError"));
+          },
+        };
+        signal.addEventListener("abort", waiter.onAbort, { once: true });
+        this.waiters.push(waiter);
+      });
+    }
+    this.busy = true;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      const next = this.waiters.shift();
+      if (!next) return void (this.busy = false);
+      // hand the lane straight to the next lecture so nobody can cut in line
+      next.signal.removeEventListener("abort", next.onAbort);
+      next.resolve();
+    };
+  }
+}
+
+const mediaLane = new Lane();
+const aiLane = new Lane();
 
 export function enqueue(id: string) {
   if (running.has(id) || queue.includes(id)) return;
@@ -53,8 +96,9 @@ export function recoverOnBoot() {
   }
 }
 
+// Every queued lecture starts right away and waits in the lanes, which keep queue order.
 function pump() {
-  while (running.size < MAX_PARALLEL && queue.length) {
+  while (queue.length) {
     const id = queue.shift()!;
     const ac = new AbortController();
     running.set(id, ac);
@@ -105,7 +149,29 @@ function stepUpdater(id: string) {
   };
 }
 
+/** Media work is already on disk (e.g. a re-analysis), so the lecture needn't wait behind another's transcription. */
+function hasMediaWork(id: string) {
+  const l = getLecture(id);
+  if (!l?.mediaPath || !fs.existsSync(l.mediaPath) || !docs.transcript.get(id)) return true;
+  return l.hasVideo && l.options.visualAnalysis && !docs.frames.get(id);
+}
+
 async function run(id: string, signal: AbortSignal) {
+  let release = null as (() => void) | null; // set inside enter(), so TS can't narrow it
+  const enter = async (lane: Lane) => {
+    release?.();
+    release = null;
+    release = await lane.acquire(signal);
+  };
+  try {
+    if (hasMediaWork(id)) await enter(mediaLane);
+    await runSteps(id, signal, enter);
+  } finally {
+    release?.();
+  }
+}
+
+async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => Promise<void>) {
   const settings = getSettings();
   const step = stepUpdater(id);
   let lecture = updateLecture(id, (l) => {
@@ -237,6 +303,13 @@ async function run(id: string, signal: AbortSignal) {
   } else {
     step.done("frames", `${frames.length}장`);
   }
+
+  // the GPU is free for the next lecture from here on
+  updateLecture(id, (l) => {
+    const s = l.steps.find((x) => x.id === "analyze")!;
+    if (s.status === "pending") s.detail = "앞 강의 분석이 끝나길 기다리는 중";
+  });
+  await enter(aiLane);
 
   // 5. per-section analysis ----------------------------------------------------
   let analysis = docs.analysis.get(id);
