@@ -1,10 +1,12 @@
 import fs from "node:fs";
 import { customAlphabet } from "nanoid";
-import { LECTURES_DIR, lectureDir, readJson, writeJson } from "./paths";
+import path from "node:path";
+import { DATA_DIR, LECTURES_DIR, lectureDir, readJson, writeJson } from "./paths";
 import type {
   Analysis,
   ChatMessage,
   Flashcard,
+  Folder,
   Frame,
   Lecture,
   Material,
@@ -50,6 +52,18 @@ export function updateLecture(id: string, fn: (l: Lecture) => void): Lecture {
 
 export function deleteLecture(id: string) {
   fs.rmSync(lectureDir(id), { recursive: true, force: true });
+}
+
+// --- library folders ---------------------------------------------------------
+
+const FOLDERS_FILE = path.join(DATA_DIR, "folders.json");
+
+export function listFolders(): Folder[] {
+  return readJson<Folder[]>(FOLDERS_FILE, []);
+}
+
+export function saveFolders(folders: Folder[]) {
+  writeJson(FOLDERS_FILE, folders);
 }
 
 // --- per-lecture documents -------------------------------------------------

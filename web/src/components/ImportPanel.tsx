@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, Captions, ChevronDown, FileVideo, FolderOpen, Link2, SlidersHorizontal, Upload, X } from "lucide-react";
+import { ArrowRight, Captions, ChevronDown, FileVideo, Folder as FolderIcon, FolderOpen, Link2, SlidersHorizontal, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { OUTPUT_LANGUAGES } from "@shared/catalog";
 import type { LectureOptions, ModelChoice } from "@shared/types";
@@ -22,7 +22,8 @@ function fmtSize(bytes: number) {
   return `${Math.round(bytes / 1e6)} MB`;
 }
 
-export function ImportPanel() {
+/** `folder` is the library folder being viewed; new lectures are filed there. */
+export function ImportPanel({ folder }: { folder?: { id: string; name: string } }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: settings } = useSettings();
@@ -96,7 +97,7 @@ export function ImportPanel() {
       if (mode === "file") {
         const results = await runImportQueue(files, options, multiple ? undefined : title.trim() || undefined, {
           upload: uploadFile,
-          create: api.createLecture,
+          create: (body) => api.createLecture({ ...body, folderId: folder?.id }),
         }, (updated) => {
           setFiles((items) => items.map((item) => item.id === updated.id ? updated : item));
           if (updated.status === "done") void qc.invalidateQueries({ queryKey: ["lectures"] });
@@ -111,7 +112,7 @@ export function ImportPanel() {
       const source = mode === "url" ? { kind: "url" as const, value: url.trim() } : { kind: "path" as const, value: localPath.trim() };
       let subtitleUploadId: string | undefined;
       if (subs) subtitleUploadId = (await uploadFile(subs, () => {})).uploadId;
-      const lecture = await api.createLecture({ source, title: title.trim() || undefined, subtitleUploadId, options });
+      const lecture = await api.createLecture({ source, title: title.trim() || undefined, subtitleUploadId, folderId: folder?.id, options });
       qc.invalidateQueries({ queryKey: ["lectures"] });
       navigate(`/lecture/${lecture.id}`);
     } catch (e) {
@@ -317,7 +318,12 @@ export function ImportPanel() {
 
       <div className="flex flex-wrap items-center justify-between gap-3 px-3 pt-3 pb-2">
         <div className="min-w-0 flex-1 text-xs text-faint">
-          {mode === "file" && files.length ? (
+          {folder && !busy ? (
+            <span className="flex items-center gap-1.5 truncate font-medium text-accent">
+              <FolderIcon className="size-3.5 shrink-0" />
+              “{folder.name}” 폴더에 추가돼요
+            </span>
+          ) : mode === "file" && files.length ? (
             <span role="status">{completed} / {files.length}개 등록 완료{busy ? " · 등록이 끝날 때까지 이 화면을 열어 두세요" : remaining.some((item) => item.status === "error") ? " · 실패한 파일은 다시 시도하세요" : " · 한 파일씩 업로드합니다"}</span>
           ) : settings ? (
             <span className="hidden truncate sm:block">

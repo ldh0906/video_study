@@ -13,20 +13,25 @@ import {
   MoreHorizontal,
   Network,
   NotebookPen,
+  Pencil,
   RefreshCcw,
   Settings2,
   Sparkles,
   Trash2,
   Captions,
   FileDown,
+  GraduationCap,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { fmtTime } from "@shared/time";
+import { dueToday } from "@shared/review";
 import type { Lecture, ModelChoice } from "@shared/types";
 import { ThemeMenu, useOpenSettings } from "@/App";
 import { ModelPicker } from "@/components/ModelPicker";
+import { NameDialog } from "@/components/NameDialog";
 import { Button, Dialog, Label, Menu, MenuItem, MenuSeparator, Segmented, Spinner, Tooltip } from "@/components/ui";
-import { ChapterStrip, Player } from "@/features/Player";
+import { Player } from "@/features/Player";
 import { ProcessingPanel } from "@/features/ProcessingPanel";
 import { StudyContext, type StudyContextValue, type TabId } from "@/features/study-context";
 import { TranscriptPanel } from "@/features/TranscriptPanel";
@@ -44,16 +49,52 @@ import { api } from "@/lib/api";
 import { player } from "@/lib/player";
 import { cn } from "@/lib/utils";
 
-const TABS: { id: TabId; label: string; icon: ReactNode }[] = [
-  { id: "overview", label: "개요", icon: <BookOpen /> },
-  { id: "notes", label: "노트", icon: <FileText /> },
-  { id: "chat", label: "튜터", icon: <MessageCircle /> },
-  { id: "cards", label: "카드", icon: <Layers /> },
-  { id: "quiz", label: "퀴즈", icon: <ClipboardCheck /> },
-  { id: "mindmap", label: "마인드맵", icon: <Network /> },
-  { id: "materials", label: "자료실", icon: <Sparkles /> },
-  { id: "memo", label: "메모", icon: <NotebookPen /> },
+interface TabGroup {
+  id: string;
+  label: string;
+  icon: ReactNode;
+  tabs: { id: TabId; label: string; icon: ReactNode }[];
+}
+
+/** Four destinations instead of eight tabs: views of the same job share a group. */
+const GROUPS: TabGroup[] = [
+  {
+    id: "read",
+    label: "읽기",
+    icon: <BookOpen />,
+    tabs: [
+      { id: "overview", label: "개요", icon: <BookOpen /> },
+      { id: "notes", label: "노트", icon: <FileText /> },
+      { id: "mindmap", label: "마인드맵", icon: <Network /> },
+    ],
+  },
+  {
+    id: "practice",
+    label: "연습",
+    icon: <GraduationCap />,
+    tabs: [
+      { id: "cards", label: "카드", icon: <Layers /> },
+      { id: "quiz", label: "퀴즈", icon: <ClipboardCheck /> },
+    ],
+  },
+  { id: "chat", label: "튜터", icon: <MessageCircle />, tabs: [{ id: "chat", label: "튜터", icon: <MessageCircle /> }] },
+  { id: "materials", label: "자료 만들기", icon: <Sparkles />, tabs: [{ id: "materials", label: "자료", icon: <Sparkles /> }] },
 ];
+const TRANSCRIPT_GROUP: TabGroup = { id: "transcript", label: "대본", icon: <LayoutList />, tabs: [{ id: "transcript", label: "대본", icon: <LayoutList /> }] };
+
+function loadFlag(key: string) {
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function saveValue(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {}
+}
 
 function useIsWide() {
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
@@ -84,17 +125,29 @@ export function LectureView() {
   const { data: analysis } = useQuery({ queryKey: ["analysis", id, lecture?.analyzed], queryFn: () => api.analysis(id), enabled: !!lecture?.analyzed });
   const { data: frames = [] } = useQuery({ queryKey: ["frames", id, framesReady], queryFn: () => api.frames(id), enabled: !!lecture && framesReady });
   const { data: cards = [] } = useCards(id);
-  const due = cards.filter((c) => c.due <= Date.now()).length;
+  const due = dueToday(cards);
 
-  const [tab, setTabState] = useState<TabId>(() => (localStorage.getItem(`tab:${id}`) as TabId) || "overview");
+  // memo is a panel that opens beside any view, so it is never "the" tab
+  const [memoOpen, setMemoOpenState] = useState(() => loadFlag("memoOpen") || localStorage.getItem(`tab:${id}`) === "memo");
+  const setMemoOpen = useCallback((v: boolean) => {
+    setMemoOpenState(v);
+    saveValue("memoOpen", v ? "1" : "0");
+  }, []);
+  const [tab, setTabState] = useState<TabId>(() => {
+    const saved = localStorage.getItem(`tab:${id}`) as TabId | null;
+    return saved && saved !== "memo" ? saved : "overview";
+  });
+  // the view each group was last left on, so switching groups comes back to it
+  const [lastViewOf, setLastViewOf] = useState<Record<string, TabId>>({});
   const setTab = useCallback(
     (t: TabId) => {
+      if (t === "memo") return setMemoOpen(true);
       setTabState(t);
-      try {
-        localStorage.setItem(`tab:${id}`, t);
-      } catch {}
+      saveValue(`tab:${id}`, t);
+      const g = [...GROUPS, TRANSCRIPT_GROUP].find((x) => x.tabs.some((v) => v.id === t));
+      if (g) setLastViewOf((m) => ({ ...m, [g.id]: t }));
     },
-    [id],
+    [id, setMemoOpen],
   );
   const [pendingAsk, setPendingAsk] = useState<{ text: string; anchor: number | null } | null>(null);
   const [memoAppend, setMemoAppend] = useState<{ text: string; time: number | null; n: number } | null>(null);
@@ -147,14 +200,14 @@ export function LectureView() {
             },
             addToMemo: (text, time = null) => {
               setMemoAppend((m) => ({ text, time, n: (m?.n ?? 0) + 1 }));
-              setTab("memo");
+              setMemoOpen(true);
               toast.success("메모에 추가했습니다");
             },
             makeCard: (front, back = "", time = null) => setCardDraft({ front, back, time }),
             openExport: () => setExportOpen(true),
           }
         : null,
-    [lecture, analysis, tab, setTab],
+    [lecture, analysis, tab, setTab, setMemoOpen],
   );
 
   if (error) {
@@ -179,23 +232,43 @@ export function LectureView() {
 
   const left = (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      {hasMedia ? (
-        <Player lecture={lecture} chapters={chapters} frames={frames} segments={transcript?.segments} onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)} />
-      ) : (
-        <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface-2 text-sm text-muted">
-          <Spinner className="mr-2" /> 영상을 준비하는 중…
-        </div>
-      )}
-      <ChapterStrip chapters={chapters} />
+      {/* capped by height so the transcript below always keeps a usable share of the column */}
+      <div className="mx-auto w-full max-w-[calc(48vh*16/9)] shrink-0">
+        {hasMedia ? (
+          <Player lecture={lecture} chapters={chapters} frames={frames} segments={transcript?.segments} onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)} />
+        ) : (
+          <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface-2 text-sm text-muted">
+            <Spinner className="mr-2" /> 영상을 준비하는 중…
+          </div>
+        )}
+      </div>
       {wide ? (
         <div className="min-h-0 flex-1 rounded-2xl border border-border bg-surface p-2 pt-3">
-          <TranscriptPanel transcript={transcript} loading={!transcribed} />
+          <TranscriptPanel transcript={transcript} chapters={chapters} loading={!transcribed} />
         </div>
       ) : null}
     </div>
   );
 
-  const tabs = wide ? TABS : [...TABS.slice(0, 2), { id: "transcript" as TabId, label: "대본", icon: <LayoutList /> }, ...TABS.slice(2)];
+  const groups = wide ? GROUPS : [GROUPS[0], TRANSCRIPT_GROUP, ...GROUPS.slice(1)];
+  const group = groups.find((g) => g.tabs.some((t) => t.id === tab)) ?? groups[0];
+  const view = group.tabs.some((t) => t.id === tab) ? tab : group.tabs[0].id;
+
+  const memoPanel = (
+    <div className="flex h-[42%] min-h-[180px] shrink-0 flex-col border-t border-border pt-3">
+      <div className="mb-1 flex items-center gap-2 px-1">
+        <NotebookPen className="size-4 text-accent" />
+        <span className="text-[13px] font-semibold">내 메모</span>
+        <div className="flex-1" />
+        <Button variant="ghost" size="icon-sm" onClick={() => setMemoOpen(false)} aria-label="메모 닫기">
+          <X className="size-4" />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1">
+        <MemoTab lecture={lecture} appendRequest={memoAppend} />
+      </div>
+    </div>
+  );
 
   const right = !ready ? (
     <div className="h-full overflow-y-auto">
@@ -203,33 +276,59 @@ export function LectureView() {
     </div>
   ) : (
     <div className="flex h-full min-h-0 flex-col">
-      <nav className="no-scrollbar mb-3 flex shrink-0 gap-0.5 overflow-x-auto rounded-[14px] border border-border bg-surface p-1 shadow-soft [scrollbar-width:none]">
-        {tabs.map((t) => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "relative flex shrink-0 items-center gap-1.5 rounded-[10px] px-3 py-2 text-[13px] font-medium transition-all [&>svg]:size-4",
-              tab === t.id ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface-2 hover:text-text",
-            )}
-          >
-            {t.icon}
-            {t.label}
-            {t.id === "cards" && due > 0 ? <span className="rounded-full bg-accent px-1.5 text-[10.5px] leading-[17px] font-bold text-accent-fg tabular-nums">{due}</span> : null}
-          </button>
-        ))}
-      </nav>
-      <div ref={tabScroller} className={cn("min-h-0 flex-1", tab === "chat" || tab === "mindmap" || tab === "memo" || tab === "transcript" ? "overflow-hidden" : "overflow-y-auto")}>
-        {tab === "overview" && <OverviewTab lecture={lecture} analysis={analysis} />}
-        {tab === "notes" && <NotesTab lecture={lecture} analysis={analysis} scroller={tabScroller} />}
-        {tab === "chat" && <ChatTab lecture={lecture} pending={pendingAsk} onPendingConsumed={() => setPendingAsk(null)} />}
-        {tab === "cards" && <CardsTab lecture={lecture} />}
-        {tab === "quiz" && <QuizTab lecture={lecture} />}
-        {tab === "mindmap" && <MindmapTab analysis={analysis} />}
-        {tab === "materials" && <MaterialsTab lecture={lecture} />}
-        {tab === "memo" && <MemoTab lecture={lecture} appendRequest={memoAppend} />}
-        {tab === "transcript" && <TranscriptPanel transcript={transcript} />}
+      <div className="mb-3 flex shrink-0 items-center gap-2">
+        <nav role="tablist" aria-label="학습 메뉴" className="flex min-w-0 flex-1 gap-0.5 rounded-[14px] border border-border bg-surface p-1 shadow-soft">
+          {groups.map((g) => {
+            const selected = g === group;
+            return (
+              <button
+                key={g.id}
+                role="tab"
+                aria-selected={selected}
+                onClick={() => setTab(selected ? view : (g.tabs.find((t) => t.id === lastViewOf[g.id])?.id ?? g.tabs[0].id))}
+                className={cn(
+                  "relative flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-[10px] px-2 py-2 text-[13px] font-medium whitespace-nowrap transition-all [&>svg]:size-4 [&>svg]:shrink-0",
+                  selected ? "bg-accent-soft text-accent" : "text-muted hover:bg-surface-2 hover:text-text",
+                )}
+              >
+                {g.icon}
+                <span className="truncate">{g.label}</span>
+                {g.id === "practice" && due > 0 ? <span className="rounded-full bg-accent px-1.5 text-[10.5px] leading-[17px] font-bold text-accent-fg tabular-nums">{due}</span> : null}
+              </button>
+            );
+          })}
+        </nav>
+        <Tooltip content={memoOpen ? "메모 닫기" : "메모 열기"}>
+          <Button variant={memoOpen ? "soft" : "secondary"} size="icon" aria-pressed={memoOpen} aria-label="내 메모" onClick={() => setMemoOpen(!memoOpen)} className="h-[42px] w-[42px] shrink-0 rounded-[14px]">
+            <NotebookPen className="size-[18px]" />
+          </Button>
+        </Tooltip>
       </div>
+      {group.tabs.length > 1 ? (
+        <div className="mb-3 shrink-0">
+          <Segmented
+            size="sm"
+            value={view}
+            onChange={(t) => setTab(t as TabId)}
+            options={group.tabs.map((t) => ({ value: t.id, label: <span className="flex items-center gap-1.5 [&>svg]:size-3.5">{t.icon}{t.label}{t.id === "cards" && due > 0 ? ` ${due}` : ""}</span> }))}
+          />
+        </div>
+      ) : null}
+      <div
+        ref={tabScroller}
+        role="tabpanel"
+        className={cn("min-h-0 flex-1", view === "chat" || view === "mindmap" || view === "transcript" ? "overflow-hidden" : "overflow-y-auto")}
+      >
+        {view === "overview" && <OverviewTab lecture={lecture} analysis={analysis} />}
+        {view === "notes" && <NotesTab lecture={lecture} analysis={analysis} scroller={tabScroller} />}
+        {view === "chat" && <ChatTab lecture={lecture} pending={pendingAsk} onPendingConsumed={() => setPendingAsk(null)} />}
+        {view === "cards" && <CardsTab lecture={lecture} />}
+        {view === "quiz" && <QuizTab lecture={lecture} />}
+        {view === "mindmap" && <MindmapTab analysis={analysis} />}
+        {view === "materials" && <MaterialsTab lecture={lecture} />}
+        {view === "transcript" && <TranscriptPanel transcript={transcript} chapters={chapters} />}
+      </div>
+      {memoOpen ? memoPanel : null}
     </div>
   );
 
@@ -284,8 +383,29 @@ function SplitPane({ left, right }: { left: ReactNode; right: ReactNode }) {
       <div style={{ width: `${ratio * 100}%` }} className="min-w-0">
         {left}
       </div>
-      <div onPointerDown={drag} className="group flex w-5 shrink-0 cursor-col-resize items-center justify-center" role="separator" aria-orientation="vertical">
-        <div className="h-12 w-1 rounded-full bg-border transition-colors group-hover:bg-accent" />
+      <div
+        onPointerDown={drag}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          setRatio((v) => {
+            const next = Math.min(0.7, Math.max(0.3, v + (e.key === "ArrowLeft" ? -0.02 : 0.02)));
+            try {
+              localStorage.setItem("split", String(next));
+            } catch {}
+            return next;
+          });
+        }}
+        className="group flex w-5 shrink-0 cursor-col-resize items-center justify-center rounded-full outline-none"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="영상과 학습 패널 너비 조절"
+        aria-valuemin={30}
+        aria-valuemax={70}
+        aria-valuenow={Math.round(ratio * 100)}
+      >
+        <div className="h-12 w-1 rounded-full bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
       </div>
       <div className="min-w-0 flex-1">{right}</div>
     </div>
@@ -296,6 +416,7 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
+  const [renaming, setRenaming] = useState(false);
   const [title, setTitle] = useState(lecture.title);
   useEffect(() => setTitle(lecture.title), [lecture.title]);
 
@@ -337,9 +458,23 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
         )}
       </div>
       {lecture.analyzed ? (
-        <Button size="sm" variant="soft" onClick={onExport} className="hidden sm:inline-flex">
-          <FileDown className="size-3.5" /> 학습서 PDF
-        </Button>
+        <Menu
+          trigger={
+            <Button size="sm" variant="soft">
+              <FileDown className="size-3.5" /> <span className="hidden sm:inline">내보내기</span>
+            </Button>
+          }
+        >
+          <MenuItem icon={<FileDown />} onSelect={onExport}>
+            학습서 PDF 만들기…
+          </MenuItem>
+          <MenuItem icon={<Download />} onSelect={() => window.open(api.exportUrl(lecture.id, "md"))}>
+            학습 노트 (.md)
+          </MenuItem>
+          <MenuItem icon={<Layers />} onSelect={() => window.open(api.exportUrl(lecture.id, "anki"))}>
+            플래시카드 (Anki)
+          </MenuItem>
+        </Menu>
       ) : null}
       <ThemeMenu />
       <Menu
@@ -349,20 +484,9 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
           </Button>
         }
       >
-        {lecture.analyzed ? (
-          <>
-            <MenuItem icon={<FileDown />} onSelect={onExport}>
-              학습서 PDF 만들기…
-            </MenuItem>
-            <MenuItem icon={<Download />} onSelect={() => window.open(api.exportUrl(lecture.id, "md"))}>
-              학습 노트 내보내기 (.md)
-            </MenuItem>
-            <MenuItem icon={<Layers />} onSelect={() => window.open(api.exportUrl(lecture.id, "anki"))}>
-              플래시카드 내보내기 (Anki)
-            </MenuItem>
-            <MenuSeparator />
-          </>
-        ) : null}
+        <MenuItem icon={<Pencil />} onSelect={() => setRenaming(true)}>
+          이름 바꾸기
+        </MenuItem>
         <MenuItem icon={<RefreshCcw />} onSelect={onReprocess}>
           다시 분석하기…
         </MenuItem>
@@ -383,6 +507,18 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
           강의 삭제
         </MenuItem>
       </Menu>
+      <NameDialog
+        open={renaming}
+        title="강의 이름 바꾸기"
+        initial={lecture.title}
+        placeholder="강의 이름"
+        onClose={() => setRenaming(false)}
+        onSubmit={async (name) => {
+          await api.updateLecture(lecture.id, { title: name });
+          qc.invalidateQueries({ queryKey: ["lecture", lecture.id] });
+          qc.invalidateQueries({ queryKey: ["lectures"] });
+        }}
+      />
     </header>
   );
 }

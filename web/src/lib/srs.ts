@@ -1,34 +1,69 @@
+import { State, createEmptyCard, fsrs, generatorParameters, type Card, type Grade } from "ts-fsrs";
+import { buildQueue, isNewCard } from "@shared/review";
 import type { Flashcard } from "@shared/types";
+
+export { NEW_PER_DAY, buildQueue } from "@shared/review";
 
 export type Rating = 1 | 2 | 3 | 4; // again, hard, good, easy
 
 const DAY = 86_400_000;
 const MIN = 60_000;
 
-/** SM-2 style scheduling with a short relearning step for lapses. */
-export function schedule(card: Flashcard, rating: Rating, now = Date.now()): Partial<Flashcard> {
-  let { ease, interval, reps, lapses } = card;
-  if (rating === 1) {
-    return { ease: Math.max(1.3, ease - 0.2), interval: 0, reps: 0, lapses: lapses + 1, due: now + 10 * MIN };
+// FSRS with fuzz so cards made together don't stay clumped on the same days.
+const scheduler = fsrs(generatorParameters({ request_retention: 0.9, maximum_interval: 365, enable_fuzz: true }));
+
+/** The card's FSRS state; cards reviewed under the old SM-2 scheduler are converted from interval and ease. */
+function toFsrs(c: Flashcard, now: number): Card {
+  if (c.state !== undefined) {
+    return {
+      due: new Date(c.due),
+      stability: c.stability ?? 0,
+      difficulty: c.difficulty ?? 0,
+      elapsed_days: 0,
+      scheduled_days: Math.round(c.interval),
+      learning_steps: c.learningSteps ?? 0,
+      reps: c.reps,
+      lapses: c.lapses,
+      state: c.state as State,
+      last_review: c.lastReview ? new Date(c.lastReview) : undefined,
+    };
   }
-  if (reps === 0) {
-    interval = rating === 2 ? 0.25 : rating === 3 ? 1 : 3;
-  } else if (reps === 1 && rating >= 3) {
-    interval = rating === 3 ? 3 : 6;
-  } else {
-    const base = Math.max(interval, 0.25);
-    interval = rating === 2 ? base * 1.2 : rating === 3 ? base * ease : base * ease * 1.35;
-  }
-  if (rating === 2) ease = Math.max(1.3, ease - 0.15);
-  if (rating === 4) ease = ease + 0.15;
-  interval = Math.min(interval, 365);
-  return { ease, interval, reps: reps + 1, lapses, due: now + interval * DAY };
+  if (c.reps === 0) return { ...createEmptyCard(new Date(now)), lapses: c.lapses };
+  const interval = Math.max(c.interval, 0.1);
+  return {
+    due: new Date(c.due),
+    stability: interval,
+    // SM-2 ease 1.3 (hard) … 3+ (easy) onto FSRS difficulty 10 … 1
+    difficulty: Math.min(10, Math.max(1, 5 + (2.5 - c.ease) * 5)),
+    elapsed_days: 0,
+    scheduled_days: Math.round(interval),
+    learning_steps: 0,
+    reps: c.reps,
+    lapses: c.lapses,
+    state: State.Review,
+    last_review: new Date(c.due - interval * DAY),
+  };
 }
 
-export function previewInterval(card: Flashcard, rating: Rating): string {
-  const next = schedule(card, rating, 0);
-  const ms = next.due!;
-  if (ms < 60 * MIN) return `${Math.round(ms / MIN)}분`;
+export function schedule(card: Flashcard, rating: Rating, now = Date.now()): Partial<Flashcard> {
+  const next = scheduler.next(toFsrs(card, now), new Date(now), rating as Grade).card;
+  return {
+    due: next.due.getTime(),
+    interval: next.scheduled_days,
+    stability: next.stability,
+    difficulty: next.difficulty,
+    state: next.state as 0 | 1 | 2 | 3,
+    learningSteps: next.learning_steps,
+    reps: next.reps,
+    lapses: next.lapses,
+    lastReview: now,
+    introducedAt: card.introducedAt ?? now,
+  };
+}
+
+export function previewInterval(card: Flashcard, rating: Rating, now = Date.now()): string {
+  const ms = schedule(card, rating, now).due! - now;
+  if (ms < 60 * MIN) return `${Math.max(1, Math.round(ms / MIN))}분`;
   if (ms < DAY) return `${Math.round(ms / (60 * MIN))}시간`;
   const d = ms / DAY;
   if (d < 30) return `${Math.round(d)}일`;
@@ -39,8 +74,8 @@ export function previewInterval(card: Flashcard, rating: Rating): string {
 export function deckStats(cards: Flashcard[], now = Date.now()) {
   return {
     total: cards.length,
-    due: cards.filter((c) => c.due <= now).length,
-    fresh: cards.filter((c) => c.reps === 0).length,
-    learned: cards.filter((c) => c.reps > 0 && c.interval >= 1).length,
+    due: buildQueue(cards.map((card) => ({ card })), now).length,
+    fresh: cards.filter(isNewCard).length,
+    learned: cards.filter((c) => !isNewCard(c) && c.interval >= 1).length,
   };
 }

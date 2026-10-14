@@ -1,7 +1,8 @@
 import { fmtTime } from "../shared/time";
 import type { Analysis, ChatMessage, Flashcard, Lecture, Material, MaterialKind, ModelChoice, Quiz, QuizQuestion, Segment } from "../shared/types";
 import { generateObject, generateText, type LLMUsage } from "./llm";
-import { CardsSchema, GradeSchema, MATERIAL_PRESETS, QuizSchema, chatSystem, materialSystem, quizSystem } from "./prompts";
+import { CardsSchema, GradeSchema, MATERIAL_PRESETS, QuizSchema, cardsSystem, chatSystem, materialSystem, quizSystem } from "./prompts";
+import { timestampFixer } from "./pipeline/timestamps";
 import { getSettings } from "./settings";
 import { docs, newId, updateLecture } from "./store";
 import { formatTranscript } from "./pipeline/analyze";
@@ -33,6 +34,7 @@ export function notesContext(a: Analysis, sectionIdx?: number[]) {
         `## Part ${s.index + 1}: ${s.title} [${fmtTime(s.start)}–${fmtTime(s.end)}]`,
         s.notes,
         s.difficult.length ? `Difficult points:\n${s.difficult.map((d) => `- [${fmtTime(d.time)}] ${d.topic}: ${d.explanation}`).join("\n")}` : "",
+        s.flags?.length ? `Flagged claims (keep them flagged):\n${s.flags.map((f) => `- [${fmtTime(f.time)}] (${f.kind}) ${f.text}`).join("\n")}` : "",
       ]
         .filter(Boolean)
         .join("\n\n"),
@@ -54,7 +56,7 @@ export async function generateMoreCards(lecture: Lecture, count: number, focus: 
   const existing = docs.flashcards.get(lecture.id);
   const { object, usage } = await generateObject({
     choice: lecture.options.analysis,
-    system: `${quizSystem(lecture.options.outputLanguage)}\n\nNow you write flashcards instead of quiz questions: one idea per card, specific question on the front, concise complete answer on the back.`,
+    system: cardsSystem(lecture.options.outputLanguage),
     messages: [
       {
         role: "user",
@@ -224,8 +226,9 @@ export function startMaterial(lecture: Lecture, kind: MaterialKind, prompt: stri
   })
     .then((res) => {
       addUsage(lecture.id, res.usage);
+      const fixTimes = timestampFixer(docs.transcript.get(lecture.id)?.segments ?? [], lecture.durationSec);
       // let any pending throttled write land first
-      setTimeout(() => save({ content: res.text || content, status: "done" }), 900);
+      setTimeout(() => save({ content: fixTimes(res.text || content), status: "done" }), 900);
     })
     .catch((err: Error) => {
       setTimeout(() => save({ status: "error", error: err.message, content }), 900);
@@ -304,7 +307,7 @@ export async function chat(
   if (anchor !== null) content = `(The student is watching the video at [${fmtTime(anchor)}].)\n\n${content}`;
   if (!sendFull) {
     const excerpts = retrieve(segments, message, anchor);
-    if (excerpts.length) content = `Relevant transcript excerpts:\n${excerpts.map(formatTranscript).join("\n…\n")}\n\n---\n${content}`;
+    if (excerpts.length) content = `Relevant transcript excerpts:\n${excerpts.map((w) => formatTranscript(w)).join("\n…\n")}\n\n---\n${content}`;
   }
 
   const recent = history.filter((m) => !m.error).slice(-16);

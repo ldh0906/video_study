@@ -9,7 +9,7 @@ import { addUsage, generateQuiz, newCard } from "../study";
 import { extractAudio, extractKeyframes, probe, thumbnail } from "../tools/ffmpeg";
 import { downloadSubtitles, downloadVideo, videoInfo } from "../tools/ytdlp";
 import { installedModels, resolveWhisper } from "../tools/whisper";
-import { analyzeSections, buildSections, synthesize } from "./analyze";
+import { analyzeSections, buildOutline, buildSections, synthesize } from "./analyze";
 import { transcribeAudio } from "./transcribe";
 import { throttle } from "./util";
 
@@ -314,9 +314,15 @@ async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => 
   // 5. per-section analysis ----------------------------------------------------
   let analysis = docs.analysis.get(id);
   if (!analysis) {
-    step.start("analyze");
+    step.start("analyze", "강의 전체 흐름과 개념 파악 중");
     const segments: Segment[] = transcript.segments;
     const ranges = buildSections(segments, info.duration);
+    // Without the outline each part still works, just without knowing what came before.
+    const outline = await buildOutline(lecture, segments, signal, onUsage).catch((err: Error) => {
+      if (signal.aborted) throw err;
+      console.warn(`[pipeline ${id}] outline failed, continuing without it:`, err.message);
+      return null;
+    });
     const sections = await analyzeSections(
       {
         lecture,
@@ -324,6 +330,7 @@ async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => 
         frames: lecture.options.visualAnalysis ? frames : [],
         framesPerSection: settings.framesPerSection,
         concurrency: settings.concurrency,
+        outline,
         signal,
         onUsage,
         onProgress: (p, d) => step.progress("analyze", p, d),
@@ -334,7 +341,7 @@ async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => 
 
     // 6. synthesis -------------------------------------------------------------
     step.start("synthesize", "전체 구조와 개념 정리 중");
-    analysis = await synthesize(lecture, sections, signal, onUsage);
+    analysis = await synthesize(lecture, sections, segments, outline, signal, onUsage);
     docs.analysis.set(id, analysis);
     updateLecture(id, (l) => {
       l.analyzed = true;
@@ -364,7 +371,7 @@ async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => 
 /** Throw away analysis artifacts so the lecture is re-analyzed (e.g. with another model). */
 export function resetAnalysis(lecture: Lecture, keepStudy: boolean) {
   const dir = lectureDir(lecture.id);
-  for (const f of ["analysis.json", "sections"]) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
+  for (const f of ["analysis.json", "sections", "outline.json"]) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
   if (!keepStudy) for (const f of ["flashcards.json", "quizzes.json"]) fs.rmSync(path.join(dir, f), { force: true });
   updateLecture(lecture.id, (l) => {
     l.analyzed = false;

@@ -36,3 +36,9 @@ export function isTyping(e: KeyboardEvent) {
   const t = e.target as HTMLElement | null;
   return !!t && (t.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(t.tagName));
 }
+
+/** Space/Enter belong to the focused control (a button, link, tab…), not to page-wide shortcuts. */
+export function focusOwnsActivation(e: KeyboardEvent) {
+  const t = e.target as HTMLElement | null;
+  return isTyping(e) || !!t?.closest?.("button, a[href], summary, [role=button], [role=tab], [role=menuitem], [role=checkbox], [role=switch], [role=slider]");
+}

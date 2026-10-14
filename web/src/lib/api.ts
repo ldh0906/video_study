@@ -5,6 +5,7 @@ import type {
   ExportOptions,
   ExportResult,
   Flashcard,
+  Folder,
   Frame,
   GradeResult,
   Lecture,
@@ -62,9 +63,16 @@ export const api = {
     source: { kind: "upload" | "path" | "url"; value: string; uploadId?: string };
     title?: string;
     subtitleUploadId?: string;
+    folderId?: string;
     options?: Partial<LectureOptions>;
   }) => req<Lecture>("POST", "/api/lectures", body),
-  updateLecture: (id: string, patch: { title?: string; options?: Partial<LectureOptions> }) => req<Lecture>("PATCH", L(id), patch),
+  updateLecture: (id: string, patch: { title?: string; folderId?: string | null; options?: Partial<LectureOptions> }) => req<Lecture>("PATCH", L(id), patch),
+  reviewItems: (folderId?: string) =>
+    req<{ lectureId: string; lectureTitle: string; card: Flashcard }[]>("GET", `/api/review${folderId ? `?folder=${encodeURIComponent(folderId)}` : ""}`),
+  folders: () => req<Folder[]>("GET", "/api/folders"),
+  createFolder: (name: string) => req<Folder>("POST", "/api/folders", { name }),
+  renameFolder: (id: string, name: string) => req<Folder>("PATCH", `/api/folders/${id}`, { name }),
+  deleteFolder: (id: string) => req("DELETE", `/api/folders/${id}`),
   deleteLecture: (id: string) => req("DELETE", L(id)),
   resume: (id: string) => req("POST", L(id, "/resume")),
   cancel: (id: string) => req("POST", L(id, "/cancel")),

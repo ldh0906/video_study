@@ -1,18 +1,90 @@
-import { useCallback, useMemo } from "react";
-import { Crosshair, Download, FileDown, FileText, Sparkle } from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import { ChevronRight, Crosshair, Eye, FileText, PenLine, Sparkle } from "lucide-react";
 import { fmtTime } from "@shared/time";
-import type { Analysis, Lecture } from "@shared/types";
+import type { Analysis, Lecture, SelfCheck } from "@shared/types";
 import { Markdown, TimeChip } from "@/components/Markdown";
-import { Button, Menu, MenuItem, Tooltip } from "@/components/ui";
-import { api } from "@/lib/api";
+import { Button, Menu, MenuItem, Textarea, Tooltip } from "@/components/ui";
 import { usePlayerSecond } from "@/lib/player";
 import { cn } from "@/lib/utils";
 import { SelectionActions } from "../SelectionActions";
-import { useStudy } from "../study-context";
 
-export function NotesTab({ lecture, analysis, scroller }: { lecture: Lecture; analysis: Analysis; scroller: React.RefObject<HTMLDivElement | null> }) {
+/** Older analyses wrote self-check questions, answers included, at the end of the notes. */
+const LEGACY_SELF_CHECK = /^#{3,4} .*(자기 ?점검|자가 ?점검|스스로 (확인|점검|적용)|이해 점검|적용 확인|self-check)/im;
+
+function NotesBody({ notes }: { notes: string }) {
+  const m = LEGACY_SELF_CHECK.exec(notes);
+  if (!m) return <Markdown>{notes}</Markdown>;
+  // the self-check block runs until the next heading of the same or higher level
+  const level = m[0].match(/^#+/)![0].length;
+  const rest = notes.slice(m.index + m[0].length);
+  const next = rest.search(new RegExp(`^#{3,${level}} `, "m"));
+  const end = next < 0 ? notes.length : m.index + m[0].length + next;
+  return (
+    <>
+      <Markdown>{notes.slice(0, m.index)}</Markdown>
+      <details className="group mt-4 rounded-xl border border-border bg-surface-2/50">
+        <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-[13.5px] font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRight className="size-4 text-muted transition-transform group-open:rotate-90" />
+          자기 점검 <span className="font-normal text-muted">· 먼저 스스로 답해 본 뒤 펼치세요</span>
+        </summary>
+        <div className="border-t border-border px-4 pt-2 pb-4">
+          <Markdown>{notes.slice(m.index, end)}</Markdown>
+        </div>
+      </details>
+      {end < notes.length ? <Markdown className="mt-4">{notes.slice(end)}</Markdown> : null}
+    </>
+  );
+}
+
+/** Answer first, then compare: retrieving the idea is what makes it stick. */
+function SelfCheckList({ items }: { items: SelfCheck[] }) {
+  return (
+    <div className="mt-5 rounded-xl border border-border bg-surface-2/50 p-4">
+      <div className="mb-3 flex items-center gap-1.5 text-[12.5px] font-semibold text-text">
+        <PenLine className="size-3.5 text-accent" /> 자기 점검 <span className="font-normal text-muted">· 답을 먼저 써 본 뒤 확인하세요</span>
+      </div>
+      <ol className="space-y-4">
+        {items.map((x, i) => (
+          <SelfCheckItem key={i} n={i + 1} item={x} />
+        ))}
+      </ol>
+    </div>
+  );
+}
+
+function SelfCheckItem({ n, item }: { n: number; item: SelfCheck }) {
+  const [draft, setDraft] = useState("");
+  const [open, setOpen] = useState(false);
+  return (
+    <li>
+      <div className="flex gap-2 text-[14.5px] leading-relaxed font-medium">
+        <span className="text-accent tabular-nums">{n}.</span>
+        <Markdown className="min-w-0 flex-1 [&_p]:font-medium">{item.question}</Markdown>
+      </div>
+      <div className="mt-2 pl-5">
+        {open ? (
+          <div className="space-y-2">
+            {draft.trim() ? <p className="rounded-lg bg-surface px-3 py-2 text-[13.5px] whitespace-pre-wrap text-muted">내 답: {draft}</p> : null}
+            <div className="rounded-lg border-l-2 border-accent bg-surface px-3 py-2">
+              <Markdown className="text-[14px]">{item.answer}</Markdown>
+              <TimeChip time={item.time}>관련 장면</TimeChip>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
+            <Textarea rows={2} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="내 답을 적어 보세요" className="min-h-0 flex-1 text-[13.5px]" />
+            <Button size="sm" variant="soft" onClick={() => setOpen(true)} className="shrink-0">
+              <Eye className="size-3.5" /> 답 확인
+            </Button>
+          </div>
+        )}
+      </div>
+    </li>
+  );
+}
+
+export function NotesTab({ analysis, scroller }: { lecture: Lecture; analysis: Analysis; scroller: React.RefObject<HTMLDivElement | null> }) {
   const second = usePlayerSecond();
-  const { openExport } = useStudy();
   const chapters = analysis.overview.chapters;
   const grouped = useMemo(
     () =>
@@ -49,7 +121,8 @@ export function NotesTab({ lecture, analysis, scroller }: { lecture: Lecture; an
         <h4 className="text-[16.5px] font-semibold tracking-tight">{s.title}</h4>
         {activeSection === s.index ? <span className="ml-auto text-[11.5px] font-medium text-accent">지금 보는 부분</span> : null}
       </header>
-      <Markdown>{s.notes}</Markdown>
+      <NotesBody notes={s.notes} />
+      {s.selfCheck?.length ? <SelfCheckList items={s.selfCheck} /> : null}
       {s.keyPoints.length ? (
         <div className="mt-5 rounded-xl bg-accent-soft p-4">
           <div className="mb-2 flex items-center gap-1.5 text-[12.5px] font-semibold text-accent">
@@ -93,13 +166,6 @@ export function NotesTab({ lecture, analysis, scroller }: { lecture: Lecture; an
             <Crosshair className="size-3.5" /> 현재 위치
           </Button>
         </Tooltip>
-        <div className="flex-1" />
-        <Button size="sm" variant="ghost" onClick={() => window.open(api.exportUrl(lecture.id, "md"))}>
-          <Download className="size-3.5" /> Markdown
-        </Button>
-        <Button size="sm" variant="soft" onClick={openExport}>
-          <FileDown className="size-3.5" /> 학습서 PDF
-        </Button>
       </div>
 
       <div className="space-y-10">

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { ChevronRight, Clock, Compass, GraduationCap, Lightbulb, Search, Target } from "lucide-react";
+import { AlertTriangle, ChevronRight, Clock, Compass, GraduationCap, Lightbulb, Search, Target } from "lucide-react";
 import { fmtDuration, fmtTime } from "@shared/time";
 import type { Analysis, Lecture } from "@shared/types";
 import { Markdown, TimeChip } from "@/components/Markdown";
@@ -126,6 +126,20 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
         </Section>
       ) : null}
 
+      {o.issues?.length ? (
+        <Section icon={<AlertTriangle />} title="확인이 필요한 부분">
+          <p className="mb-3 text-[13px] leading-relaxed text-muted">음성 인식이 불분명했거나 AI가 강의 내용을 바로잡은 곳이에요. 해당 장면이나 교재로 한 번 확인해 보세요.</p>
+          <ul className="space-y-2">
+            {o.issues.map((x, i) => (
+              <li key={i} className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft/40 px-3.5 py-2.5 text-[13.5px] leading-relaxed">
+                <TimeChip time={x.time} className="shrink-0" />
+                <Markdown className="min-w-0 flex-1 text-[13.5px]">{x.text}</Markdown>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
       {o.prerequisites.length ? (
         <Section icon={<GraduationCap />} title="미리 알면 좋은 것">
           <div className="grid gap-2.5 sm:grid-cols-2">
@@ -165,9 +179,12 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
         </Section>
       ) : null}
 
-      <p className="mt-12 text-center text-[11.5px] text-faint">
-        {analysis.model} 로 분석 · 토큰 {formatTokens(lecture.usage.inputTokens)} 입력 / {formatTokens(lecture.usage.outputTokens)} 출력
-      </p>
+      <details className="mt-12 text-center text-[12px] text-muted">
+        <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">분석 정보</summary>
+        <p className="mt-1.5">
+          {analysis.model} 로 분석 · 토큰 {formatTokens(lecture.usage.inputTokens)} 입력 / {formatTokens(lecture.usage.outputTokens)} 출력
+        </p>
+      </details>
     </div>
   );
 }

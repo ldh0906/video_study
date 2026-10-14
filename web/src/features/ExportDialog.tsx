@@ -249,7 +249,7 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
                       </a>
                       <button
                         aria-label="삭제"
-                        className="rounded-md p-1 text-muted opacity-0 group-hover:opacity-100 hover:text-danger"
+                        className="rounded-md p-1 text-muted opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100 hover:text-danger"
                         onClick={async () => {
                           await api.deleteExport(lecture.id, f.file);
                           qc.invalidateQueries({ queryKey: ["exports", lecture.id] });

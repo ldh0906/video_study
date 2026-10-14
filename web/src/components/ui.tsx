@@ -1,6 +1,6 @@
-import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { forwardRef, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode, type RefObject, type TextareaHTMLAttributes } from "react";
 import { Dialog as RDialog, DropdownMenu as RMenu, Popover as RPopover, Switch as RSwitch, Tooltip as RTooltip } from "radix-ui";
-import { Loader2, X } from "lucide-react";
+import { ChevronRight, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 // --- Button -----------------------------------------------------------------
@@ -151,6 +151,7 @@ export function Dialog({
   children,
   className,
   footer,
+  initialFocus,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -159,12 +160,19 @@ export function Dialog({
   children: ReactNode;
   className?: string;
   footer?: ReactNode;
+  /** element to focus on open instead of the first focusable one (the close button) */
+  initialFocus?: RefObject<HTMLElement | null>;
 }) {
   return (
     <RDialog.Root open={open} onOpenChange={onOpenChange}>
       <RDialog.Portal>
         <RDialog.Overlay className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px] data-[state=open]:animate-[fadeIn_150ms_ease]" />
         <RDialog.Content
+          onOpenAutoFocus={(e) => {
+            if (!initialFocus?.current) return;
+            e.preventDefault();
+            initialFocus.current.focus();
+          }}
           className={cn(
             "fixed top-1/2 left-1/2 z-50 flex max-h-[min(88vh,820px)] w-[calc(100vw-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[popIn_180ms_cubic-bezier(0.2,0.8,0.2,1)]",
             className,
@@ -271,6 +279,27 @@ export function MenuItem({ children, onSelect, danger, icon }: { children: React
 }
 
 export const MenuSeparator = () => <RMenu.Separator className="my-1 h-px bg-border" />;
+
+export function MenuSub({ label, icon, children }: { label: ReactNode; icon?: ReactNode; children: ReactNode }) {
+  return (
+    <RMenu.Sub>
+      <RMenu.SubTrigger className="flex cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] text-text outline-none select-none data-[highlighted]:bg-surface-2 data-[state=open]:bg-surface-2">
+        {icon ? <span className="text-muted [&>svg]:size-4">{icon}</span> : null}
+        {label}
+        <ChevronRight className="ml-auto size-3.5 text-faint" />
+      </RMenu.SubTrigger>
+      <RMenu.Portal>
+        <RMenu.SubContent
+          sideOffset={6}
+          collisionPadding={12}
+          className="z-50 max-h-[min(60vh,420px)] min-w-[200px] overflow-y-auto rounded-xl border border-border bg-surface p-1.5 shadow-float data-[state=open]:animate-[popIn_140ms_ease]"
+        >
+          {children}
+        </RMenu.SubContent>
+      </RMenu.Portal>
+    </RMenu.Sub>
+  );
+}
 
 // --- small display pieces ----------------------------------------------------------------
 

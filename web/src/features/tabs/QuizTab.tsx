@@ -94,7 +94,7 @@ function QuizRow({ lecture, quiz, onOpen }: { lecture: Lecture; quiz: Quiz; onOp
       <Button
         variant="ghost"
         size="icon-sm"
-        className="opacity-0 group-hover:opacity-100"
+        className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 [@media(hover:none)]:opacity-100"
         aria-label="삭제"
         onClick={async () => {
           if (!confirm(`“${quiz.title}”을 삭제할까요?`)) return;
@@ -229,6 +229,22 @@ function QuizRunner({ lecture, quiz, onBack }: { lecture: Lecture; quiz: Quiz; o
   );
 }
 
+/**
+ * Display order of a question's options. Models put the right answer in
+ * predictable positions, so options are shuffled — seeded by the question id,
+ * so the order stays the same when the student comes back.
+ */
+function optionOrder(id: string, n: number) {
+  let seed = [...id].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) >>> 0, 7);
+  const rand = () => ((seed = (seed * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const order = Array.from({ length: n }, (_, i) => i);
+  for (let i = n - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return order;
+}
+
 function QuestionCard({
   lecture,
   quiz,
@@ -248,6 +264,7 @@ function QuestionCard({
 }) {
   const [text, setText] = useState(answer?.text ?? "");
   const revealed = answer?.revealed ?? false;
+  const order = useMemo(() => optionOrder(q.id, q.options.length), [q.id, q.options.length]);
   const grade = useMutation({
     mutationFn: () => api.grade(lecture.id, quiz.id, q.id, text),
     onSuccess: (g) => onAnswer({ text, grade: g, revealed: true, correct: g.verdict === "correct" || g.score >= 80 }),
@@ -259,8 +276,8 @@ function QuestionCard({
       const t = e.target as HTMLElement;
       if (t.tagName === "TEXTAREA" || t.tagName === "INPUT") return;
       if (q.type === "mcq" && !revealed && /^[1-9]$/.test(e.key)) {
-        const i = Number(e.key) - 1;
-        if (i < q.options.length) onAnswer({ choice: i, revealed: true, correct: i === q.answerIndex });
+        const i = order[Number(e.key) - 1];
+        if (i !== undefined) onAnswer({ choice: i, revealed: true, correct: i === q.answerIndex });
       } else if (revealed && e.key === "Enter") onNext();
     };
     window.addEventListener("keydown", onKey);
@@ -278,7 +295,8 @@ function QuestionCard({
 
         {q.type === "mcq" ? (
           <div className="mt-6 space-y-2.5">
-            {q.options.map((o, i) => {
+            {order.map((i, pos) => {
+              const o = q.options[i];
               const chosen = answer?.choice === i;
               const isAnswer = i === q.answerIndex;
               return (
@@ -300,7 +318,7 @@ function QuestionCard({
                       revealed && isAnswer ? "bg-success text-white" : revealed && chosen ? "bg-danger text-white" : "bg-surface-2 text-muted",
                     )}
                   >
-                    {revealed && isAnswer ? <Check className="size-3.5" /> : revealed && chosen ? <X className="size-3.5" /> : i + 1}
+                    {revealed && isAnswer ? <Check className="size-3.5" /> : revealed && chosen ? <X className="size-3.5" /> : pos + 1}
                   </span>
                   <Markdown className="min-w-0 flex-1 text-[14.5px] [&_p]:text-[14.5px]">{o}</Markdown>
                 </button>

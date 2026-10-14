@@ -13,7 +13,7 @@
   --border-strong: #d4d0c5;
   --text: #1c1b18;
   --muted: #6c685f;
-  --faint: #9f9b91;
+  --faint: #716d65; /* ≥4.5:1 on bg and surface (WCAG 1.4.3) */
   --accent: #5b5bd6;
   --accent-strong: #4646bd;
   --accent-soft: rgba(91, 91, 214, 0.09);
@@ -39,7 +39,7 @@
   --border-strong: #3b3a36;
   --text: #ecebe5;
   --muted: #a29f96;
-  --faint: #6f6c65;
+  --faint: #8c8981; /* ≥4.5:1 on bg and surface */
   --accent: #8d8df2;
   --accent-strong: #a5a5f7;
   --accent-soft: rgba(141, 141, 242, 0.12);

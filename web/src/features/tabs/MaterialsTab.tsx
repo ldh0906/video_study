@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { motion } from "motion/react";
-import { AlertTriangle, ArrowLeft, BookOpenCheck, Copy, Download, FileQuestion, Lightbulb, NotebookText, PenLine, Printer, ScrollText, Sparkles, Trash2, Wand2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, BookOpenCheck, Copy, Download, Eye, FileQuestion, Lightbulb, NotebookText, PenLine, Printer, ScrollText, Sparkles, Trash2, Wand2 } from "lucide-react";
 import { toast } from "sonner";
 import type { Lecture, Material, MaterialKind } from "@shared/types";
 import { Markdown } from "@/components/Markdown";
@@ -19,7 +19,7 @@ const PRESETS: { kind: MaterialKind; title: string; description: string; icon: R
     input: { label: "특히 파고들 주제 (선택)", placeholder: "비우면 강의에서 가장 어려운 개념들을 골라요" },
   },
   { kind: "practice", title: "연습 문제", description: "기초부터 응용까지, 단계별 풀이 포함", icon: <PenLine /> },
-  { kind: "exam", title: "예상 시험 문제", description: "강조된 내용 중심 · 모범 답안과 채점 포인트", icon: <BookOpenCheck /> },
+  { kind: "exam", title: "모의고사", description: "강의에서 강조한 내용 중심 · 답안은 풀고 나서 공개", icon: <BookOpenCheck /> },
   { kind: "faq", title: "자주 묻는 질문", description: "학생들이 헷갈려 할 질문과 답", icon: <FileQuestion /> },
   {
     kind: "custom",
@@ -131,6 +131,28 @@ export function MaterialsTab({ lecture }: { lecture: Lecture }) {
   );
 }
 
+/** Where the answers start in problem sets; older materials used plain "풀이"/"Solutions" headings. */
+const ANSWERS_RE = /^#{2,4}\s*(✅|정답|풀이|해답|모범 ?답안|Solutions?\b|Answers?\b)/im;
+
+/** Questions stay visible, answers stay folded until the student has tried them. */
+function MaterialContent({ material: m }: { material: Material }) {
+  const [shown, setShown] = useState(false);
+  const streaming = m.status === "generating";
+  const at = m.kind === "practice" || m.kind === "exam" || m.kind === "deepdive" ? m.content.search(ANSWERS_RE) : -1;
+  if (at < 0 || shown) return <Markdown streaming={streaming}>{m.content}</Markdown>;
+  return (
+    <>
+      <Markdown streaming={streaming}>{m.content.slice(0, at)}</Markdown>
+      <div className="mt-8 rounded-2xl border border-dashed border-border-strong bg-surface-2/50 px-5 py-6 text-center">
+        <p className="text-[13.5px] text-muted">먼저 직접 풀어 본 뒤 답을 확인하세요. 스스로 떠올린 답이 훨씬 오래 남아요.</p>
+        <Button className="mt-3" variant="soft" disabled={streaming} onClick={() => setShown(true)}>
+          <Eye className="size-3.5" /> 정답과 풀이 보기
+        </Button>
+      </div>
+    </>
+  );
+}
+
 function MaterialReader({ lecture, material: m, onBack }: { lecture: Lecture; material: Material; onBack: () => void }) {
   const qc = useQueryClient();
   return (
@@ -182,7 +204,7 @@ function MaterialReader({ lecture, material: m, onBack }: { lecture: Lecture; ma
             <AlertTriangle className="size-4 shrink-0" /> {m.error}
           </div>
         ) : m.content ? (
-          <Markdown streaming={m.status === "generating"}>{m.content}</Markdown>
+          <MaterialContent material={m} />
         ) : (
           <div className="flex items-center gap-2 text-[13.5px] text-muted">
             <Spinner /> 강의 노트를 읽고 자료를 구성하는 중… (모델과 추론 강도에 따라 몇 분 걸릴 수 있어요)

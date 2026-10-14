@@ -138,6 +138,14 @@ export interface Lecture {
   transcriptSource?: string;
   /** set once analysis.json exists */
   analyzed: boolean;
+  /** folder in the library; absent = top level */
+  folderId?: string;
+}
+
+export interface Folder {
+  id: string;
+  name: string;
+  createdAt: number;
 }
 
 export interface Segment {
@@ -166,6 +174,21 @@ export interface KeyPoint {
 export interface Concept {
   term: string;
   definition: string;
+  /** seconds; absent in analyses made before concepts were timed */
+  time?: number;
+}
+
+export interface SelfCheck {
+  question: string;
+  answer: string;
+  time: number;
+}
+
+/** A claim the notes mark as uncertain, or a correction of the lecturer. */
+export interface Flag {
+  time: number;
+  kind: "verify" | "correction";
+  text: string;
 }
 
 export interface DifficultPart {
@@ -186,6 +209,9 @@ export interface SectionAnalysis {
   concepts: Concept[];
   difficult: DifficultPart[];
   cards: { front: string; back: string; time: number }[];
+  /** absent in older analyses, whose self-checks live inside `notes` */
+  selfCheck?: SelfCheck[];
+  flags?: Flag[];
 }
 
 export interface Chapter {
@@ -207,6 +233,8 @@ export interface Overview {
   mindmap: string; // markdown outline
   difficulty: number; // 1..5
   tags: string[];
+  /** claims to verify, carried over from the parts */
+  issues?: { time: number; text: string }[];
 }
 
 export interface Analysis {
@@ -221,13 +249,21 @@ export interface Flashcard {
   front: string;
   back: string;
   time: number | null;
-  /** SRS state (SM-2 style) */
+  /** SRS state. `ease` is the legacy SM-2 factor, only read to migrate older cards to FSRS. */
   due: number;
   interval: number; // days
   ease: number;
   reps: number;
   lapses: number;
   createdAt: number;
+  /** FSRS memory state; absent until the card's first FSRS review */
+  stability?: number;
+  difficulty?: number;
+  state?: 0 | 1 | 2 | 3; // new, learning, review, relearning
+  learningSteps?: number;
+  lastReview?: number;
+  /** when the card was first studied, for the daily new-card limit */
+  introducedAt?: number;
 }
 
 export interface QuizQuestion {

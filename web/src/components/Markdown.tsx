@@ -8,7 +8,7 @@ import rehypeHighlight from "rehype-highlight";
 import { Play } from "lucide-react";
 import { preprocessMarkdown } from "@shared/markdown";
 import { fmtTime } from "@shared/time";
-import { player } from "@/lib/player";
+import { player, usePlayer } from "@/lib/player";
 import { cn } from "@/lib/utils";
 
 export function TimeChip({ time, className, children }: { time: number; className?: string; children?: ReactNode }) {
@@ -44,6 +44,8 @@ const components: Components = {
 };
 
 export const Markdown = memo(function Markdown({ children, className, streaming }: { children: string; className?: string; streaming?: boolean }) {
+  // a "timestamp" past the end of the video is something else, e.g. a bit range
+  const duration = usePlayer((s) => Math.round(s.duration));
   return (
     <div className={cn("prose-study", streaming && "is-streaming", className)}>
       <ReactMarkdown
@@ -51,7 +53,7 @@ export const Markdown = memo(function Markdown({ children, className, streaming 
         rehypePlugins={[[rehypeKatex, { strict: false, throwOnError: false }], [rehypeHighlight, { detect: false, ignoreMissing: true }]]}
         components={components}
       >
-        {preprocessMarkdown(children)}
+        {preprocessMarkdown(children, { maxTime: duration || undefined })}
       </ReactMarkdown>
     </div>
   );

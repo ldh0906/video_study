@@ -5,7 +5,7 @@ import type { Chapter, Frame, Lecture, Segment } from "@shared/types";
 import { Popover, Tooltip } from "@/components/ui";
 import { api } from "@/lib/api";
 import { player, usePlayer } from "@/lib/player";
-import { cn, isTyping } from "@/lib/utils";
+import { cn, focusOwnsActivation, isTyping } from "@/lib/utils";
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 1.75, 2, 2.5];
 
@@ -160,6 +160,7 @@ export function Player({
       const m = mediaRef.current;
       if (!m) return;
       const k = e.key.toLowerCase();
+      if (k === " " && focusOwnsActivation(e)) return; // Space presses the focused button instead
       if (k === " " || k === "k") {
         e.preventDefault();
         player.toggle();
@@ -400,34 +401,5 @@ function CtrlButton({ label, onClick, children }: { label: string; onClick: () =
         {children}
       </button>
     </Tooltip>
-  );
-}
-
-export function ChapterStrip({ chapters }: { chapters: Chapter[] }) {
-  const second = usePlayer((s) => Math.floor(s.time));
-  const ref = useRef<HTMLDivElement>(null);
-  const active = chapters.findIndex((c) => second >= c.start && second < c.end);
-  useEffect(() => {
-    const el = ref.current?.querySelector<HTMLElement>(`[data-idx="${active}"]`);
-    el?.scrollIntoView({ behavior: "smooth", inline: "nearest", block: "nearest" });
-  }, [active]);
-  if (!chapters.length) return null;
-  return (
-    <div ref={ref} className="no-scrollbar flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
-      {chapters.map((c, i) => (
-        <button
-          key={i}
-          data-idx={i}
-          onClick={() => player.seek(c.start)}
-          className={cn(
-            "flex max-w-[240px] shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-left transition-all",
-            i === active ? "border-accent bg-accent-soft" : "border-border bg-surface hover:border-border-strong",
-          )}
-        >
-          <span className={cn("text-[11.5px] font-semibold tabular-nums", i === active ? "text-accent" : "text-faint")}>{fmtTime(c.start)}</span>
-          <span className="truncate text-[13px] font-medium">{c.title}</span>
-        </button>
-      ))}
-    </div>
   );
 }

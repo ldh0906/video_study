@@ -132,7 +132,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
                     {m.error ? m.content : <Markdown>{m.content}</Markdown>}
                   </div>
                   {!m.error ? (
-                    <div className="mt-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    <div className="mt-1.5 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 [@media(hover:none)]:opacity-100">
                       <Tooltip content="복사">
                         <Button
                           variant="ghost"

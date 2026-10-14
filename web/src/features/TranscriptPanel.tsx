@@ -1,7 +1,7 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ChevronDown, ChevronUp, Search, X } from "lucide-react";
 import { fmtTime } from "@shared/time";
-import type { Segment, Transcript } from "@shared/types";
+import type { Chapter, Segment, Transcript } from "@shared/types";
 import { Button, EmptyState, Spinner } from "@/components/ui";
 import { player, usePlayerSecond } from "@/lib/player";
 import { cn } from "@/lib/utils";
@@ -47,8 +47,17 @@ const Row = memo(function Row({ seg, idx, active, query }: { seg: Segment; idx: 
   );
 });
 
-export function TranscriptPanel({ transcript, loading }: { transcript: Transcript | null | undefined; loading?: boolean }) {
+export function TranscriptPanel({ transcript, chapters = [], loading }: { transcript: Transcript | null | undefined; chapters?: Chapter[]; loading?: boolean }) {
   const segs = useMemo(() => transcript?.segments ?? [], [transcript]);
+  // segment index → chapter that begins there, so the transcript reads in sections
+  const chapterAt = useMemo(() => {
+    const map = new Map<number, Chapter>();
+    for (const c of chapters) {
+      const i = segs.findIndex((s) => s.start >= c.start - 1);
+      if (i >= 0 && !map.has(i)) map.set(i, c);
+    }
+    return map;
+  }, [segs, chapters]);
   const second = usePlayerSecond();
   const active = activeIndex(segs, second);
   const scroller = useRef<HTMLDivElement>(null);
@@ -140,7 +149,7 @@ export function TranscriptPanel({ transcript, loading }: { transcript: Transcrip
           </div>
         ) : (
           <>
-            <span className="flex-1 text-xs text-faint">
+            <span className="flex-1 text-xs text-muted">
               {transcript?.source ? `${transcript.source} · ` : ""}
               {segs.length}개 구간 · 텍스트를 선택하면 질문할 수 있어요
             </span>
@@ -157,9 +166,20 @@ export function TranscriptPanel({ transcript, loading }: { transcript: Transcrip
         }}
         className="relative min-h-0 flex-1 overflow-y-auto pr-1"
       >
-        {segs.map((s, i) => (
-          <Row key={i} seg={s} idx={i} active={i === active} query={query.trim()} />
-        ))}
+        {segs.map((s, i) => {
+          const chapter = chapterAt.get(i);
+          return (
+            <Fragment key={i}>
+              {chapter ? (
+                <button onClick={() => player.seek(chapter.start)} className="sticky top-0 z-[1] mt-3 mb-1 block w-full bg-surface/95 px-3 pt-2 pb-1.5 text-left backdrop-blur first:mt-0">
+                  <span className="text-[11.5px] font-semibold text-accent tabular-nums">{fmtTime(chapter.start)}</span>
+                  <span className="ml-2 text-[13.5px] font-semibold">{chapter.title}</span>
+                </button>
+              ) : null}
+              <Row seg={s} idx={i} active={i === active} query={query.trim()} />
+            </Fragment>
+          );
+        })}
         <div className="h-24" />
       </div>
       {!follow ? (

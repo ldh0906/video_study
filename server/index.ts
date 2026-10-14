@@ -7,6 +7,7 @@ import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import { MODEL_CATALOG, effortOptions } from "../shared/catalog";
 import { presetOptions } from "../shared/export";
+import { dueToday } from "../shared/review";
 import { fmtTime } from "../shared/time";
 import type { ExportFile, ExportOptions, Flashcard, Lecture, LectureOptions, MaterialKind, ModelChoice, ModelOption, Provider, Settings, ToolStatus, WhisperModel } from "../shared/types";
 import { buildDocument } from "./export/document";
@@ -18,7 +19,7 @@ import { listOpenAIModels } from "./llm/openai";
 import { DATA_DIR, ROOT, WEB_DIST, lectureDir } from "./paths";
 import { cancel, enqueue, isBusy, recoverOnBoot, resetAnalysis, resetTranscript } from "./pipeline";
 import { getSettings, publicSettings, saveSettings } from "./settings";
-import { deleteLecture, docs, freshSteps, getLecture, listLectures, newId, saveLecture, updateLecture } from "./store";
+import { deleteLecture, docs, freshSteps, getLecture, listFolders, listLectures, newId, saveFolders, saveLecture, updateLecture } from "./store";
 import { chat, generateMoreCards, generateQuiz, gradeAnswer, newCard, startMaterial } from "./study";
 import { FFMPEG, ffmpegVersion } from "./tools/ffmpeg";
 import { installYtdlp, resolveYtdlp } from "./tools/ytdlp";
@@ -150,9 +151,18 @@ app.post("/api/uploads", async (c) => {
 app.get("/api/lectures", (c) => {
   const lectures = listLectures().map((l) => {
     const cards = docs.flashcards.get(l.id);
-    return { ...l, cardsDue: cards.filter((x) => x.due <= Date.now()).length, cardsTotal: cards.length };
+    return { ...l, cardsDue: dueToday(cards), cardsTotal: cards.length };
   });
   return c.json(lectures);
+});
+
+/** Every card of the library (or of one folder) with its lecture, for one review session across lectures. */
+app.get("/api/review", (c) => {
+  const folder = c.req.query("folder");
+  const items = listLectures()
+    .filter((l) => !folder || l.folderId === folder)
+    .flatMap((l) => docs.flashcards.get(l.id).map((card) => ({ lectureId: l.id, lectureTitle: l.title, card })));
+  return c.json(items);
 });
 
 app.post("/api/lectures", async (c) => {
@@ -160,6 +170,7 @@ app.post("/api/lectures", async (c) => {
     source: { kind: "upload" | "path" | "url"; value: string; uploadId?: string };
     title?: string;
     subtitleUploadId?: string;
+    folderId?: string;
     options?: Partial<LectureOptions>;
   };
   const s = getSettings();
@@ -215,6 +226,7 @@ app.post("/api/lectures", async (c) => {
     },
     usage: { inputTokens: 0, outputTokens: 0, audioSeconds: 0 },
     analyzed: false,
+    folderId: listFolders().some((f) => f.id === body.folderId) ? body.folderId : undefined,
   };
   saveLecture(lecture);
   enqueue(id);
@@ -224,12 +236,45 @@ app.post("/api/lectures", async (c) => {
 app.get("/api/lectures/:id", (c) => c.json({ ...must(c.req.param("id")), busy: isBusy(c.req.param("id")) }));
 
 app.patch("/api/lectures/:id", async (c) => {
-  const body = (await c.req.json()) as { title?: string; options?: Partial<LectureOptions> };
-  const l = updateLecture(c.req.param("id"), (x) => {
-    if (body.title?.trim()) x.title = body.title.trim();
+  const body = (await c.req.json()) as { title?: string; folderId?: string | null; options?: Partial<LectureOptions> };
+  if (body.folderId && !listFolders().some((f) => f.id === body.folderId)) return c.json({ error: "폴더를 찾을 수 없습니다." }, 404);
+  const l = updateLecture(must(c.req.param("id")).id, (x) => {
+    if (body.title?.trim()) x.title = body.title.trim().slice(0, 200);
+    if (body.folderId !== undefined) x.folderId = body.folderId ?? undefined;
     if (body.options) x.options = { ...x.options, ...body.options };
   });
   return c.json(l);
+});
+
+// --- library folders ---------------------------------------------------------------
+
+app.get("/api/folders", (c) => c.json(listFolders()));
+
+app.post("/api/folders", async (c) => {
+  const { name } = (await c.req.json()) as { name?: string };
+  if (!name?.trim()) return c.json({ error: "폴더 이름을 입력해 주세요." }, 400);
+  const folder = { id: newId(), name: name.trim().slice(0, 100), createdAt: Date.now() };
+  saveFolders([...listFolders(), folder]);
+  return c.json(folder);
+});
+
+app.patch("/api/folders/:id", async (c) => {
+  const { name } = (await c.req.json()) as { name?: string };
+  if (!name?.trim()) return c.json({ error: "폴더 이름을 입력해 주세요." }, 400);
+  const folders = listFolders();
+  const folder = folders.find((f) => f.id === c.req.param("id"));
+  if (!folder) return c.json({ error: "폴더를 찾을 수 없습니다." }, 404);
+  folder.name = name.trim().slice(0, 100);
+  saveFolders(folders);
+  return c.json(folder);
+});
+
+/** Deleting a folder keeps its lectures; they move back to the top level. */
+app.delete("/api/folders/:id", (c) => {
+  const id = c.req.param("id");
+  saveFolders(listFolders().filter((f) => f.id !== id));
+  for (const l of listLectures()) if (l.folderId === id) updateLecture(l.id, (x) => (x.folderId = undefined));
+  return c.json({ ok: true });
 });
 
 app.delete("/api/lectures/:id", (c) => {
