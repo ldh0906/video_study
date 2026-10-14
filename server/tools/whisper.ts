@@ -166,6 +166,11 @@ export async function transcribeLocal(opts: {
     "-t", String(opts.threads),
     "-oj", "-of", outPrefix,
     "-pp",
+    // Greedy decoding without carrying previous text: ~1.7x faster than beam search on lectures,
+    // and the carried context is what sends whisper into minutes-long repetition loops.
+    "-mc", "0",
+    "-bs", "1",
+    "-bo", "1",
   ];
   const gpu = gpuRuntime();
   if (gpu && bin === gpu.bin) args.push("-dev", String(gpu.device));

@@ -1,7 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { openaiClient } from "../llm/openai";
-import { cutAudio, cutAudioWav, detectSilences, planChunks } from "../tools/ffmpeg";
+import { cutAudio, cutAudioWav, detectSilences, planChunks, type Silence } from "../tools/ffmpeg";
+import { compactWav, restoreTimes, speechSpans } from "../tools/speech";
 import { defaultThreads, localParallelism, resolveWhisper, transcribeLocal } from "../tools/whisper";
 import { readJson, writeJson } from "../paths";
 import { mergeCues } from "../subtitles";
@@ -14,6 +15,7 @@ const TEXT_ONLY = new Set<TranscriptionModel>(["gpt-transcribe", "gpt-4o-transcr
 interface ChunkPlan {
   model: TranscriptionModel;
   chunks: { start: number; end: number }[];
+  silences?: Silence[];
 }
 
 export async function transcribeAudio(opts: {
@@ -37,10 +39,18 @@ export async function transcribeAudio(opts: {
     const silences = await detectSilences(audio, signal);
     const textOnly = TEXT_ONLY.has(model);
     const chunks = textOnly ? planChunks(opts.duration, silences, 30, 10) : planChunks(opts.duration, silences, 600, 90);
-    plan = { model, chunks };
+    plan = { model, chunks, silences };
     for (const f of fs.readdirSync(workDir)) if (f !== "plan.json") fs.rmSync(path.join(workDir, f), { force: true });
     writeJson(planFile, plan);
   }
+  const local = model === "local-whisper";
+  if (local && !plan.silences) {
+    // plans from older versions didn't keep silences; local whisper uses them to skip dead air
+    opts.onProgress(0, "무음 구간 분석 중…");
+    plan.silences = await detectSilences(audio, signal);
+    writeJson(planFile, plan);
+  }
+  const silences = plan.silences ?? [];
 
   const total = plan.chunks.length;
   let done = plan.chunks.filter((_, i) => fs.existsSync(path.join(workDir, `${pad(i)}.json`))).length;
@@ -51,7 +61,6 @@ export async function transcribeAudio(opts: {
   };
   report();
 
-  const local = model === "local-whisper";
   if (local) await resolveWhisper();
   // CPU workers can share cores; GPU workers share the same limited VRAM.
   const parallel = local ? localParallelism() : opts.concurrency;
@@ -63,9 +72,11 @@ export async function transcribeAudio(opts: {
     if (local) {
       const wav = path.join(workDir, `${pad(i)}.wav`);
       await cutAudioWav(audio, chunk.start, chunk.end, wav, signal);
-      segs = await transcribeLocal({
+      const spans = speechSpans(chunk.start, chunk.end, silences);
+      compactWav(wav, spans);
+      segs = !spans.length ? [] : await transcribeLocal({
         wav,
-        offset: chunk.start,
+        offset: 0,
         model: opts.whisperModel,
         language: opts.language,
         prompt: opts.prompt,
@@ -76,6 +87,7 @@ export async function transcribeAudio(opts: {
         },
         signal,
       });
+      segs = restoreTimes(segs, spans, chunk.start);
       fs.rmSync(wav, { force: true });
     } else {
       const piece = path.join(workDir, `${pad(i)}.mp3`);
