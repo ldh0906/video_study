@@ -8,6 +8,7 @@ import { TooltipProvider } from "./components/ui";
 import { Library } from "./pages/Library";
 import { LectureView } from "./pages/LectureView";
 import { ReviewPage } from "./pages/Review";
+import { ExamPage } from "./pages/Exam";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -28,6 +29,15 @@ const router = createBrowserRouter([
         ),
       },
       { path: "/lecture/:id", element: <LectureView /> },
+      {
+        path: "/exam/:id",
+        element: (
+          <div className="min-h-full">
+            <TopBar />
+            <ExamPage />
+          </div>
+        ),
+      },
       {
         path: "/review",
         element: (

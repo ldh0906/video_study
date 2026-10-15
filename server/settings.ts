@@ -1,5 +1,6 @@
 import path from "node:path";
 import { DATA_DIR, readJson, writeJson } from "./paths";
+import { CATALOG_VERSION, MODEL_UPGRADES, currentChoice } from "../shared/catalog";
 import type { Provider, PublicSettings, Settings } from "../shared/types";
 
 const FILE = path.join(DATA_DIR, "settings.json");
@@ -10,7 +11,7 @@ const DEFAULTS: Settings = {
   connection: { openai: "cli", anthropic: "cli" },
   whisperModel: "large-v3-turbo-q5_0",
   analysis: { provider: "anthropic", model: "claude-opus-5-5", effort: "high" },
-  chat: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "low" },
+  chat: { provider: "anthropic", model: "claude-sonnet-5-5", effort: "medium" },
   transcription: "local-whisper",
   outputLanguage: "ko",
   spokenLanguage: "",
@@ -24,7 +25,14 @@ const DEFAULTS: Settings = {
 
 export function getSettings(): Settings {
   const stored = readJson<Partial<Settings>>(FILE, {});
-  return { ...DEFAULTS, ...stored, connection: { ...DEFAULTS.connection, ...stored.connection } };
+  const s = { ...DEFAULTS, ...stored, connection: { ...DEFAULTS.connection, ...stored.connection } };
+  // a new catalog moves saved choices to the current generation, once
+  if (stored.catalogVersion !== CATALOG_VERSION && stored.analysis) {
+    const next = { ...s, analysis: currentChoice(s.analysis, MODEL_UPGRADES), chat: currentChoice(s.chat, MODEL_UPGRADES), catalogVersion: CATALOG_VERSION };
+    writeJson(FILE, next);
+    return next;
+  }
+  return { ...s, analysis: currentChoice(s.analysis), chat: currentChoice(s.chat) };
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {

@@ -12,10 +12,11 @@ export interface ModelInfo {
   price?: { input: number; output: number };
 }
 
-const OPENAI_5X = ["none", "low", "medium", "high", "xhigh"];
-const OPENAI_56 = ["low", "medium", "high", "xhigh", "max"];
+const OPENAI_6 = ["low", "medium", "high", "xhigh", "max"];
+const OPENAI_6_LUNA = ["none", "low", "medium", "high", "xhigh", "max"];
 const CLAUDE_5X = ["low", "medium", "high", "xhigh", "max"];
 
+// Checked against the providers' model pages on 2026-10-15.
 export const MODEL_CATALOG: ModelInfo[] = [
   {
     id: "claude-opus-5-5",
@@ -28,85 +29,94 @@ export const MODEL_CATALOG: ModelInfo[] = [
     price: { input: 4, output: 20 },
   },
   {
-    id: "claude-sonnet-5-5",
-    provider: "anthropic",
-    label: "Claude Sonnet 5.5",
-    blurb: "빠르고 똑똑한 균형형",
-    efforts: CLAUDE_5X,
-    defaultEffort: "medium",
-    vision: true,
-    price: { input: 2, output: 10 },
-  },
-  {
     id: "claude-fable-5-1",
     provider: "anthropic",
     label: "Claude Fable 5.1",
-    blurb: "가장 강력한 추론 — 매우 어려운 강의용",
+    blurb: "가장 강력한 추론 — 매우 어려운 강의·교재용",
     efforts: CLAUDE_5X,
     defaultEffort: "high",
     vision: true,
     price: { input: 10, output: 50 },
   },
   {
-    id: "claude-haiku-4-5",
+    id: "claude-sonnet-5-5",
     provider: "anthropic",
-    label: "Claude Haiku 4.5",
-    blurb: "가볍고 빠른 저비용 모델",
-    efforts: ["none", "low", "medium", "high"],
-    defaultEffort: "none",
+    label: "Claude Sonnet 5.5",
+    blurb: "빠르고 똑똑한 균형형 — 튜터·채점에 좋아요",
+    efforts: CLAUDE_5X,
+    defaultEffort: "medium",
     vision: true,
-    price: { input: 1, output: 5 },
+    price: { input: 2, output: 10 },
   },
   {
-    id: "gpt-5.6-sol",
+    id: "claude-haiku-5-5",
+    provider: "anthropic",
+    label: "Claude Haiku 5.5",
+    blurb: "가볍고 빠른 저비용 모델",
+    efforts: CLAUDE_5X,
+    defaultEffort: "medium",
+    vision: true,
+    price: { input: 0.1, output: 0.5 },
+  },
+  {
+    id: "gpt-6.1-sol",
     provider: "openai",
-    label: "GPT-5.6 Sol",
-    blurb: "OpenAI 최상위 추론 모델",
-    efforts: OPENAI_56,
+    label: "GPT-6.1 Sol",
+    blurb: "OpenAI 최신 주력 모델",
+    efforts: OPENAI_6,
+    defaultEffort: "medium",
+    vision: true,
+  },
+  {
+    id: "gpt-6-astra",
+    provider: "openai",
+    label: "GPT-6 Astra",
+    blurb: "OpenAI 최상위 추론 모델 — 가장 어려운 작업용",
+    efforts: OPENAI_6,
     defaultEffort: "high",
     vision: true,
-    price: { input: 5, output: 30 },
   },
   {
-    id: "gpt-5.6-terra",
+    id: "gpt-6-luna",
     provider: "openai",
-    label: "GPT-5.6 Terra",
-    blurb: "일상 작업용 균형형",
-    efforts: OPENAI_56,
-    defaultEffort: "medium",
-    vision: true,
-    price: { input: 2.5, output: 15 },
-  },
-  {
-    id: "gpt-5.6-luna",
-    provider: "openai",
-    label: "GPT-5.6 Luna",
+    label: "GPT-6 Luna",
     blurb: "빠르고 저렴한 경량 모델",
-    efforts: OPENAI_56,
-    defaultEffort: "low",
-    vision: true,
-    price: { input: 1, output: 6 },
-  },
-  {
-    id: "gpt-5.5",
-    provider: "openai",
-    label: "GPT-5.5",
-    blurb: "이전 세대 플래그십",
-    efforts: OPENAI_5X,
-    defaultEffort: "medium",
-    vision: true,
-    price: { input: 5, output: 30 },
-  },
-  {
-    id: "gpt-5.4-mini",
-    provider: "openai",
-    label: "GPT-5.4 mini",
-    blurb: "저비용 경량 모델",
-    efforts: OPENAI_5X,
+    efforts: OPENAI_6_LUNA,
     defaultEffort: "low",
     vision: true,
   },
 ];
+
+/**
+ * Retired models, mapped to their successors. Lectures keep the model they
+ * were analyzed with, and these are gone (GPT-5.5 left ChatGPT sign-in Codex
+ * on 2026-10-14), so requests made for those lectures use the successor.
+ */
+export const RETIRED_MODELS: Record<string, string> = {
+  "gpt-5.5": "gpt-6.1-sol",
+  "gpt-5.4-mini": "gpt-6-luna",
+  "claude-haiku-4-5": "claude-haiku-5-5",
+};
+
+/** Older generations still served; saved settings move to the successor once per catalog version. */
+export const MODEL_UPGRADES: Record<string, string> = {
+  ...RETIRED_MODELS,
+  "gpt-6-sol": "gpt-6.1-sol",
+  "gpt-5.6-sol": "gpt-6.1-sol",
+  "gpt-5.6-terra": "gpt-6.1-sol",
+  "gpt-5.6-luna": "gpt-6-luna",
+};
+
+export const CATALOG_VERSION = "2026-10";
+
+/** The successor of a model choice in `map`, with an effort the new model accepts. */
+export function currentChoice<T extends { provider: Provider; model: string; effort: string }>(choice: T, map: Record<string, string> = RETIRED_MODELS): T {
+  const next = map[choice.model];
+  if (!next) return choice;
+  const info = findModel(choice.provider, next);
+  const effort = choice.effort === "default" || info?.efforts.includes(choice.effort) ? choice.effort : (info?.defaultEffort ?? "default");
+  return { ...choice, model: next, effort };
+}
 
 export const EFFORT_LABELS: Record<string, string> = {
   default: "자동",
@@ -132,6 +142,7 @@ export function effortOptions(provider: Provider, id: string): string[] {
     if (/haiku|claude-3|sonnet-4-5|opus-4-1|opus-4-0|sonnet-4-0/.test(id)) return ["default", "none", "low", "medium", "high"];
     return ["default", ...CLAUDE_5X];
   }
+  if (/^gpt-6/.test(id)) return ["default", ...OPENAI_6_LUNA];
   if (/^(gpt-5|o\d)/.test(id)) return ["default", "none", "minimal", "low", "medium", "high", "xhigh", "max"];
   return ["default"];
 }
@@ -144,7 +155,7 @@ export const TRANSCRIPTION_MODELS: { id: TranscriptionModel; label: string; blur
     blurb: "OpenAI API · 정확도 높음 · 화자 구분",
   },
   { id: "whisper-1", label: "Whisper API", blurb: "OpenAI API · 저렴함 · 정밀한 타임스탬프" },
-  { id: "gpt-transcribe", label: "GPT Transcribe", blurb: "OpenAI API · 최고 정확도 · 30초 단위 타임스탬프" },
+  { id: "gpt-transcribe", label: "GPT Transcribe", blurb: "OpenAI API · 최신·최고 정확도 · 30초 단위 타임스탬프" },
   { id: "gpt-4o-transcribe", label: "GPT-4o Transcribe", blurb: "OpenAI API · 30초 단위 타임스탬프" },
   { id: "gpt-4o-mini-transcribe", label: "GPT-4o mini Transcribe", blurb: "OpenAI API · 저렴함 · 30초 단위 타임스탬프" },
 ];

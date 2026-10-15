@@ -12,6 +12,7 @@ import type {
   Material,
   Quiz,
   Step,
+  StudyPage,
   StepId,
   Transcript,
 } from "../shared/types";
@@ -19,9 +20,10 @@ import type {
 export const newId = customAlphabet("0123456789abcdefghijklmnopqrstuvwxyz", 12);
 
 const STEP_ORDER: StepId[] = ["fetch", "audio", "transcribe", "frames", "analyze", "synthesize", "materials"];
+const DOC_STEP_ORDER: StepId[] = ["extract", "analyze", "synthesize", "materials", "pages"];
 
-export function freshSteps(): Step[] {
-  return STEP_ORDER.map((id) => ({ id, status: "pending", progress: 0 }));
+export function freshSteps(kind: Lecture["kind"] = "video"): Step[] {
+  return (kind === "doc" ? DOC_STEP_ORDER : STEP_ORDER).map((id) => ({ id, status: "pending", progress: 0 }));
 }
 
 export function listLectures(): Lecture[] {
@@ -96,6 +98,10 @@ export const docs = {
   chat: {
     get: (id: string) => readJson<ChatMessage[]>(lectureDir(id, "chat.json"), []),
     set: (id: string, v: ChatMessage[]) => writeJson(lectureDir(id, "chat.json"), v),
+  },
+  studyPages: {
+    get: (id: string) => readJson<StudyPage[]>(lectureDir(id, "study-pages.json"), []),
+    set: (id: string, v: StudyPage[]) => writeJson(lectureDir(id, "study-pages.json"), v),
   },
   notes: {
     get: (id: string) => {

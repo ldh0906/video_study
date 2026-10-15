@@ -42,6 +42,8 @@ export interface Settings {
   concurrency: number;
   downloadQuality: "480" | "720" | "1080";
   cookiesFromBrowser: "" | "chrome" | "edge" | "firefox" | "brave" | "whale";
+  /** the model catalog the saved choices were last moved to */
+  catalogVersion?: string;
 }
 
 /** What the client sees: keys are masked. */
@@ -79,9 +81,11 @@ export type StepId =
   | "audio"
   | "transcribe"
   | "frames"
+  | "extract"
   | "analyze"
   | "synthesize"
-  | "materials";
+  | "materials"
+  | "pages";
 
 export type StepStatus = "pending" | "running" | "done" | "skipped" | "error";
 
@@ -119,8 +123,23 @@ export interface Usage {
   audioSeconds: number;
 }
 
+/** What a PDF is for the course; the exam builder weighs sources by it. */
+export type DocType = "textbook" | "slides" | "assignment" | "lab" | "exam" | "notes" | "other";
+
+/**
+ * A study item: a lecture video, or (kind "doc") a PDF. For documents every
+ * `time`/`start`/`end` anchor in the analysis, cards and quizzes holds a
+ * 1-based page number instead of seconds, so the study tabs work unchanged.
+ */
 export interface Lecture {
   id: string;
+  /** absent on items made before documents existed */
+  kind?: "video" | "doc";
+  /** documents only: the AI's guess, which the student can change */
+  docType?: DocType;
+  pageCount?: number;
+  /** the student's own labels, for filtering the library */
+  tags?: string[];
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -142,6 +161,7 @@ export interface Lecture {
   folderId?: string;
 }
 
+/** A library folder; in practice one course, so exams are built per folder. */
 export interface Folder {
   id: string;
   name: string;
@@ -232,7 +252,12 @@ export interface Overview {
   glossary: { term: string; definition: string; time: number }[];
   mindmap: string; // markdown outline
   difficulty: number; // 1..5
+  /** topic tags the AI suggests; the student adopts them into Lecture.tags */
   tags: string[];
+  /** documents only */
+  docType?: DocType;
+  /** documents only: what the author marks as important or exam-relevant, and each assignment/lab task */
+  emphasis?: { time: number; text: string }[];
   /** claims to verify, carried over from the parts */
   issues?: { time: number; text: string }[];
 }
@@ -313,6 +338,93 @@ export interface GradeResult {
   score: number; // 0..100
   verdict: "correct" | "partial" | "incorrect";
   feedback: string;
+}
+
+// --- interactive study pages ---------------------------------------------------
+
+/** A self-contained HTML lesson for one chapter, shown in a sandboxed frame. */
+export interface StudyPage {
+  id: string;
+  /** index into overview.chapters */
+  chapter: number;
+  title: string;
+  /** body HTML using the Lens Kit elements (lk-*) */
+  html: string;
+  prompt: string;
+  status: "generating" | "done" | "error";
+  /** characters written so far, while generating */
+  progress?: number;
+  error?: string;
+  model: string;
+  createdAt: number;
+}
+
+// --- course exams --------------------------------------------------------------
+
+export type Bloom = "remember" | "understand" | "apply" | "analyze" | "evaluate";
+
+export interface ExamConfig {
+  /** study items the exam covers */
+  lectureIds: string[];
+  style: "quiz" | "midterm" | "final";
+  count: number;
+  minutes: number;
+  difficulty: "easy" | "mixed" | "hard";
+  /** share of multiple-choice questions, 0..1; the rest are written answers */
+  mcqShare: number;
+  focus: string;
+}
+
+/** One row of the coverage plan: a topic, how much of the exam it gets and why. */
+export interface BlueprintRow {
+  topic: string;
+  questions: number;
+  bloom: Bloom[];
+  why: string;
+  sources: { lectureId: string; anchor: number }[];
+}
+
+export interface ExamQuestion {
+  id: string;
+  type: "mcq" | "short" | "essay";
+  question: string;
+  options: string[];
+  answerIndex: number;
+  answer: string;
+  explanation: string;
+  /** what a grader checks, one point per line */
+  rubric: string[];
+  points: number;
+  topic: string;
+  bloom: Bloom;
+  difficulty: "easy" | "medium" | "hard";
+  source: { lectureId: string; anchor: number } | null;
+}
+
+export interface ExamAttempt {
+  id: string;
+  startedAt: number;
+  submittedAt?: number;
+  answers: Record<string, string>;
+  grades: Record<string, GradeResult & { points: number }>;
+  score: number;
+  maxScore: number;
+  status: "taking" | "grading" | "graded";
+}
+
+export interface Exam {
+  id: string;
+  folderId: string | null;
+  title: string;
+  createdAt: number;
+  status: "planning" | "writing" | "ready" | "error";
+  progress?: string;
+  error?: string;
+  config: ExamConfig;
+  blueprint: BlueprintRow[];
+  questions: ExamQuestion[];
+  attempts: ExamAttempt[];
+  model: string;
 }
 
 // --- study-book PDF export ---------------------------------------------------

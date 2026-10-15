@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Blocks,
   BookOpen,
+  Check,
+  ChevronDown,
+  Hash,
   ClipboardCheck,
   Download,
   FileText,
@@ -25,11 +29,14 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { fmtTime } from "@shared/time";
+import { unitOf } from "@shared/anchor";
+import { DOC_TYPE_INFO, DOC_TYPE_ORDER } from "@shared/doctypes";
 import { dueToday } from "@shared/review";
 import type { Lecture, ModelChoice } from "@shared/types";
 import { ThemeMenu, useOpenSettings } from "@/App";
 import { ModelPicker } from "@/components/ModelPicker";
 import { NameDialog } from "@/components/NameDialog";
+import { TagChip, TagEditor } from "@/components/TagEditor";
 import { Button, Dialog, Label, Menu, MenuItem, MenuSeparator, Segmented, Spinner, Tooltip } from "@/components/ui";
 import { Player } from "@/features/Player";
 import { ProcessingPanel } from "@/features/ProcessingPanel";
@@ -39,6 +46,7 @@ import { ExportDialog } from "@/features/ExportDialog";
 import { CardEditor, useCards } from "@/features/tabs/CardsTab";
 import { CardsTab } from "@/features/tabs/CardsTab";
 import { ChatTab } from "@/features/tabs/ChatTab";
+import { ExploreTab } from "@/features/tabs/ExploreTab";
 import { MaterialsTab } from "@/features/tabs/MaterialsTab";
 import { MemoTab } from "@/features/tabs/MemoTab";
 import { MindmapTab } from "@/features/tabs/MindmapTab";
@@ -48,6 +56,9 @@ import { QuizTab } from "@/features/tabs/QuizTab";
 import { api } from "@/lib/api";
 import { player } from "@/lib/player";
 import { cn } from "@/lib/utils";
+
+// pdf.js is large; only PDF items load it
+const PdfViewer = lazy(() => import("@/features/PdfViewer").then((m) => ({ default: m.PdfViewer })));
 
 interface TabGroup {
   id: string;
@@ -65,6 +76,7 @@ const GROUPS: TabGroup[] = [
     tabs: [
       { id: "overview", label: "개요", icon: <BookOpen /> },
       { id: "notes", label: "노트", icon: <FileText /> },
+      { id: "explore", label: "인터랙티브", icon: <Blocks /> },
       { id: "mindmap", label: "마인드맵", icon: <Network /> },
     ],
   },
@@ -126,6 +138,12 @@ export function LectureView() {
   const { data: frames = [] } = useQuery({ queryKey: ["frames", id, framesReady], queryFn: () => api.frames(id), enabled: !!lecture && framesReady });
   const { data: cards = [] } = useCards(id);
   const due = dueToday(cards);
+  const isDoc = lecture?.kind === "doc";
+
+  // anchors render as pages or times from the first paint, before a viewer mounts
+  useLayoutEffect(() => {
+    if (lecture) player.setUnit(unitOf(lecture));
+  }, [lecture?.kind]);
 
   // memo is a panel that opens beside any view, so it is never "the" tab
   const [memoOpen, setMemoOpenState] = useState(() => loadFlag("memoOpen") || localStorage.getItem(`tab:${id}`) === "memo");
@@ -159,7 +177,7 @@ export function LectureView() {
   // stopping playback when leaving the page
   useEffect(() => () => player.media?.pause(), []);
 
-  // ?t=123 (links printed in study-book PDFs) → jump to that moment once the media is loaded
+  // ?t=123 (links printed in study-book PDFs, review cards) → jump there once the media or PDF is loaded
   const [searchParams] = useSearchParams();
   const startAt = Number(searchParams.get("t"));
   useEffect(() => {
@@ -167,13 +185,16 @@ export function LectureView() {
     let tries = 0;
     const t = setInterval(() => {
       const m = player.media;
-      if ((m && m.readyState >= 1) || ++tries > 50) {
+      const pdfReady = isDoc && player.state.unit === "page" && player.state.duration > 0;
+      if (pdfReady || (m && m.readyState >= 1) || ++tries > 50) {
         clearInterval(t);
-        if (m) player.seek(startAt, false);
+        // let the pages lay out before scrolling
+        if (pdfReady) setTimeout(() => player.seek(startAt), 300);
+        else if (m) player.seek(startAt, false);
       }
     }, 200);
     return () => clearInterval(t);
-  }, [startAt, lecture?.mediaPath]);
+  }, [startAt, lecture?.mediaPath, isDoc]);
 
   useEffect(() => {
     if (lecture?.status === "ready") {
@@ -230,7 +251,11 @@ export function LectureView() {
   const chapters = analysis?.overview.chapters ?? [];
   const hasMedia = Boolean(lecture.mediaPath);
 
-  const left = (
+  const left = isDoc ? (
+    <Suspense fallback={<div className={cn("flex items-center justify-center rounded-2xl border border-border bg-surface-2", wide ? "h-full" : "h-[52vh]")}><Spinner /></div>}>
+      <PdfViewer lecture={lecture} className={wide ? "h-full" : "h-[52vh]"} />
+    </Suspense>
+  ) : (
     <div className="flex h-full min-h-0 flex-col gap-3">
       {/* capped by height so the transcript below always keeps a usable share of the column */}
       <div className="mx-auto w-full max-w-[calc(48vh*16/9)] shrink-0">
@@ -250,7 +275,7 @@ export function LectureView() {
     </div>
   );
 
-  const groups = wide ? GROUPS : [GROUPS[0], TRANSCRIPT_GROUP, ...GROUPS.slice(1)];
+  const groups = wide || isDoc ? GROUPS : [GROUPS[0], TRANSCRIPT_GROUP, ...GROUPS.slice(1)];
   const group = groups.find((g) => g.tabs.some((t) => t.id === tab)) ?? groups[0];
   const view = group.tabs.some((t) => t.id === tab) ? tab : group.tabs[0].id;
 
@@ -317,10 +342,11 @@ export function LectureView() {
       <div
         ref={tabScroller}
         role="tabpanel"
-        className={cn("min-h-0 flex-1", view === "chat" || view === "mindmap" || view === "transcript" ? "overflow-hidden" : "overflow-y-auto")}
+        className={cn("min-h-0 flex-1", view === "chat" || view === "mindmap" || view === "transcript" || view === "explore" ? "overflow-hidden" : "overflow-y-auto")}
       >
         {view === "overview" && <OverviewTab lecture={lecture} analysis={analysis} />}
         {view === "notes" && <NotesTab lecture={lecture} analysis={analysis} scroller={tabScroller} />}
+        {view === "explore" && <ExploreTab lecture={lecture} analysis={analysis} />}
         {view === "chat" && <ChatTab lecture={lecture} pending={pendingAsk} onPendingConsumed={() => setPendingAsk(null)} />}
         {view === "cards" && <CardsTab lecture={lecture} />}
         {view === "quiz" && <QuizTab lecture={lecture} />}
@@ -435,7 +461,7 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
           <ArrowLeft className="size-[18px]" />
         </Link>
       </Tooltip>
-      <div className="min-w-0 flex-1">
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
         {editing ? (
           <input
             autoFocus
@@ -452,10 +478,11 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
             className="w-full rounded-lg border border-accent bg-surface px-2 py-1 text-[15px] font-semibold outline-none"
           />
         ) : (
-          <button onClick={() => setEditing(true)} className="max-w-full truncate rounded-lg px-2 py-1 text-left text-[15px] font-semibold tracking-tight hover:bg-surface-2" title="제목 바꾸기">
+          <button onClick={() => setEditing(true)} className="min-w-0 truncate rounded-lg px-2 py-1 text-left text-[15px] font-semibold tracking-tight hover:bg-surface-2" title="제목 바꾸기">
             {lecture.title}
           </button>
         )}
+        {!editing ? <ItemLabels lecture={lecture} /> : null}
       </div>
       {lecture.analyzed ? (
         <Menu
@@ -498,13 +525,13 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
           danger
           icon={<Trash2 />}
           onSelect={async () => {
-            if (!confirm("이 강의와 모든 학습 기록을 삭제할까요?")) return;
+            if (!confirm(`이 ${lecture.kind === "doc" ? "자료" : "강의"}와 모든 학습 기록을 삭제할까요?`)) return;
             await api.deleteLecture(lecture.id);
             qc.invalidateQueries({ queryKey: ["lectures"] });
             navigate("/");
           }}
         >
-          강의 삭제
+          {lecture.kind === "doc" ? "자료 삭제" : "강의 삭제"}
         </MenuItem>
       </Menu>
       <NameDialog
@@ -520,6 +547,57 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
         }}
       />
     </header>
+  );
+}
+
+/** Document type and tags beside the title: both change with a click. */
+function ItemLabels({ lecture }: { lecture: Lecture }) {
+  const qc = useQueryClient();
+  const { data: all = [] } = useQuery({ queryKey: ["lectures"], queryFn: api.lectures });
+  const { data: analysis } = useQuery({ queryKey: ["analysis", lecture.id, lecture.analyzed], queryFn: () => api.analysis(lecture.id), enabled: lecture.analyzed });
+  const allTags = useMemo(() => [...new Set(all.flatMap((l) => l.tags ?? []))].sort(), [all]);
+  const tags = lecture.tags ?? [];
+  const save = async (patch: Parameters<typeof api.updateLecture>[1]) => {
+    await api.updateLecture(lecture.id, patch);
+    void qc.invalidateQueries({ queryKey: ["lecture", lecture.id] });
+    void qc.invalidateQueries({ queryKey: ["lectures"] });
+  };
+  const type = lecture.docType ? DOC_TYPE_INFO[lecture.docType] : null;
+  return (
+    <div className="hidden shrink-0 items-center gap-1 md:flex">
+      {lecture.kind === "doc" ? (
+        <Menu
+          align="start"
+          trigger={
+            <button className="inline-flex h-6 items-center gap-1 rounded-full px-2 text-[12px] font-semibold text-white transition-opacity hover:opacity-90" style={{ background: type?.color ?? "#716d65" }}>
+              {type?.label ?? "종류 미정"}
+              <ChevronDown className="size-3" />
+            </button>
+          }
+        >
+          {DOC_TYPE_ORDER.map((t) => (
+            <MenuItem key={t} icon={t === lecture.docType ? <Check /> : <span className="size-2.5 rounded-full" style={{ background: DOC_TYPE_INFO[t].color }} />} onSelect={() => save({ docType: t })}>
+              {DOC_TYPE_INFO[t].label}
+            </MenuItem>
+          ))}
+        </Menu>
+      ) : null}
+      {tags.slice(0, 3).map((t) => (
+        <TagChip key={t} tag={t} />
+      ))}
+      <TagEditor
+        tags={tags}
+        allTags={allTags}
+        suggested={analysis?.overview.tags ?? []}
+        onChange={(next) => save({ tags: next })}
+        trigger={
+          <button className="inline-flex h-6 items-center gap-0.5 rounded-full border border-dashed border-border-strong px-2 text-[12px] font-medium text-muted transition-colors hover:border-accent hover:text-accent">
+            <Hash className="size-3" />
+            {tags.length > 3 ? `+${tags.length - 3}` : tags.length ? "편집" : "태그"}
+          </button>
+        }
+      />
+    </div>
   );
 }
 

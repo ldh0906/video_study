@@ -10,6 +10,9 @@ import { extractAudio, extractKeyframes, probe, thumbnail } from "../tools/ffmpe
 import { downloadSubtitles, downloadVideo, videoInfo } from "../tools/ytdlp";
 import { installedModels, resolveWhisper } from "../tools/whisper";
 import { analyzeSections, buildOutline, buildSections, synthesize } from "./analyze";
+import { analyzeDocSections, buildDocOutline, buildDocSections, extractDoc, pageImagesDir, pagesAsSegments, synthesizeDoc } from "./doc";
+import { pageImage, renderPages } from "../tools/pdf";
+import { autoStudyPages } from "../studypages";
 import { transcribeAudio } from "./transcribe";
 import { throttle } from "./util";
 
@@ -164,6 +167,7 @@ async function run(id: string, signal: AbortSignal) {
     release = await lane.acquire(signal);
   };
   try {
+    if (getLecture(id)?.kind === "doc") return await runDocSteps(id, signal, enter);
     if (hasMediaWork(id)) await enter(mediaLane);
     await runSteps(id, signal, enter);
   } finally {
@@ -368,19 +372,114 @@ async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => 
   updateLecture(id, (l) => (l.status = "ready"));
 }
 
+/** A PDF: read the pages, then the same analysis as a lecture with pages for times. */
+async function runDocSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => Promise<void>) {
+  const settings = getSettings();
+  const step = stepUpdater(id);
+  let lecture = updateLecture(id, (l) => {
+    l.status = "processing";
+    l.error = undefined;
+  });
+  const onUsage = (u: { input: number; output: number }) => addUsage(id, u);
+  const file = lecture.mediaPath;
+  if (!file || !fs.existsSync(file)) throw new Error(`PDF 파일을 찾을 수 없습니다: ${file ?? lecture.source.value}`);
+
+  // 1. extract ----------------------------------------------------------------
+  step.start("extract", "페이지 읽는 중");
+  const info = await extractDoc(lecture, (p) => step.progress("extract", p, "페이지 읽는 중"), signal);
+  if (!docs.transcript.get(id)) docs.transcript.set(id, { source: "pdf", segments: pagesAsSegments(info) });
+  const thumb = lectureDir(id, "thumb.jpg");
+  if (!fs.existsSync(thumb)) {
+    await renderPages(file, [1], pageImagesDir(id), 1400, signal).catch(() => {});
+    if (fs.existsSync(pageImage(pageImagesDir(id), 1))) fs.copyFileSync(pageImage(pageImagesDir(id), 1), thumb);
+  }
+  lecture = updateLecture(id, (l) => {
+    l.pageCount = info.pageCount;
+    l.hasThumbnail = fs.existsSync(thumb);
+    if (info.title && /\.pdf$/i.test(l.title)) l.title = info.title;
+  });
+  step.done("extract", `${info.pageCount}쪽`);
+
+  updateLecture(id, (l) => {
+    const s = l.steps.find((x) => x.id === "analyze")!;
+    if (s.status === "pending") s.detail = "앞 자료 분석이 끝나길 기다리는 중";
+  });
+  await enter(aiLane);
+
+  // 2–3. analysis --------------------------------------------------------------
+  let analysis = docs.analysis.get(id);
+  if (!analysis) {
+    step.start("analyze", "문서 구조와 개념 파악 중");
+    const outline = await buildDocOutline(lecture, info, signal, onUsage);
+    lecture = updateLecture(id, (l) => {
+      l.docType ??= outline.docType;
+    });
+    const docType = lecture.docType ?? outline.docType;
+    const ranges = buildDocSections(info.pages, [...outline.topics.map((t) => t.page), ...info.outline.map((b) => b.page)]);
+    const sections = await analyzeDocSections(
+      {
+        lecture,
+        info,
+        outline,
+        docType,
+        maxImages: docType === "slides" ? 24 : Math.min(10, Math.max(4, settings.framesPerSection)),
+        concurrency: settings.concurrency,
+        signal,
+        onUsage,
+        onProgress: (p, d) => step.progress("analyze", p, d),
+      },
+      ranges,
+    );
+    step.done("analyze", `${sections.length}개 파트`);
+    step.start("synthesize", "전체 구조와 개념 정리 중");
+    analysis = await synthesizeDoc(lecture, info, sections, outline, signal, onUsage);
+    docs.analysis.set(id, analysis);
+    updateLecture(id, (l) => {
+      l.analyzed = true;
+      if (/\.pdf$/i.test(l.title) || l.title === l.source.value) l.title = analysis!.overview.title;
+    });
+  } else {
+    step.done("analyze", `${analysis.sections.length}개 파트`);
+  }
+  step.done("synthesize");
+
+  // 4. starter study materials ------------------------------------------------
+  step.start("materials", "플래시카드와 퀴즈 만드는 중");
+  if (!docs.flashcards.get(id).length) {
+    docs.flashcards.set(id, analysis.sections.flatMap((s) => s.cards.map((c) => newCard(c.front, c.back, c.time))));
+  }
+  if (!docs.quizzes.get(id).length) {
+    const graded = ["assignment", "lab"].includes(getLecture(id)!.docType ?? "");
+    const count = Math.round(Math.min(30, Math.max(6, info.pageCount / 3)));
+    await generateQuiz(
+      getLecture(id)!,
+      { count, difficulty: "mixed", focus: graded ? "the concepts and methods the tasks need, never the tasks' own answers" : "", title: "기본 퀴즈" },
+      signal,
+    );
+  }
+  step.done("materials");
+
+  // 5. interactive study pages -------------------------------------------------
+  step.start("pages", "인터랙티브 학습 페이지 만드는 중");
+  const made = await autoStudyPages(getLecture(id)!, (p, d) => step.progress("pages", p, d), signal);
+  step.done("pages", made ? `${made}개 페이지` : "필요할 때 만들 수 있어요");
+  updateLecture(id, (l) => (l.status = "ready"));
+}
+
 /** Throw away analysis artifacts so the lecture is re-analyzed (e.g. with another model). */
 export function resetAnalysis(lecture: Lecture, keepStudy: boolean) {
   const dir = lectureDir(lecture.id);
   for (const f of ["analysis.json", "sections", "outline.json"]) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
-  if (!keepStudy) for (const f of ["flashcards.json", "quizzes.json"]) fs.rmSync(path.join(dir, f), { force: true });
+  if (!keepStudy) for (const f of ["flashcards.json", "quizzes.json", "study-pages.json"]) fs.rmSync(path.join(dir, f), { force: true });
   updateLecture(lecture.id, (l) => {
     l.analyzed = false;
-    for (const s of l.steps) if (["analyze", "synthesize", "materials"].includes(s.id)) Object.assign(s, { status: "pending", progress: 0, detail: undefined });
+    for (const s of l.steps) if (["analyze", "synthesize", "materials", "pages"].includes(s.id)) Object.assign(s, { status: "pending", progress: 0, detail: undefined });
   });
 }
 
 export function resetTranscript(lecture: Lecture) {
   const dir = lectureDir(lecture.id);
-  for (const f of ["transcript.json", "audio"]) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
+  // for a PDF the "transcript" is its extracted pages
+  for (const f of ["transcript.json", "audio", "pages.json", "pages"]) fs.rmSync(path.join(dir, f), { recursive: true, force: true });
   resetAnalysis(lecture, false);
 }

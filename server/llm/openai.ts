@@ -80,7 +80,7 @@ export async function listOpenAIModels(): Promise<string[]> {
   const ids: string[] = [];
   for await (const m of openai.models.list()) ids.push(m.id);
   return ids
-    .filter((id) => /^(gpt-[45]|o\d|chatgpt)/.test(id))
+    .filter((id) => /^(gpt-[4-9]|o\d|chatgpt)/.test(id))
     .filter((id) => !/(transcribe|tts|audio|realtime|search|image|codex|embedding|whisper|-\d{4}-\d{2}-\d{2}$)/.test(id))
     .sort()
     .reverse();

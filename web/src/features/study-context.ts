@@ -1,7 +1,7 @@
 import { createContext, useContext } from "react";
 import type { Analysis, Lecture } from "@shared/types";
 
-export type TabId = "overview" | "notes" | "chat" | "cards" | "quiz" | "mindmap" | "materials" | "memo" | "transcript";
+export type TabId = "overview" | "notes" | "explore" | "chat" | "cards" | "quiz" | "mindmap" | "materials" | "memo" | "transcript";
 
 export interface StudyContextValue {
   lecture: Lecture;

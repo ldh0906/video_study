@@ -9,7 +9,7 @@ import { MODEL_CATALOG, effortOptions } from "../shared/catalog";
 import { presetOptions } from "../shared/export";
 import { dueToday } from "../shared/review";
 import { fmtTime } from "../shared/time";
-import type { ExportFile, ExportOptions, Flashcard, Lecture, LectureOptions, MaterialKind, ModelChoice, ModelOption, Provider, Settings, ToolStatus, WhisperModel } from "../shared/types";
+import type { DocType, ExamConfig, ExportFile, ExportOptions, Flashcard, Lecture, LectureOptions, MaterialKind, ModelChoice, ModelOption, Provider, Settings, ToolStatus, WhisperModel } from "../shared/types";
 import { buildDocument } from "./export/document";
 import { exportStudyPdf, exportsDir, readFilledPdf } from "./export/pdf";
 import { generateText, LLMError } from "./llm";
@@ -21,6 +21,9 @@ import { cancel, enqueue, isBusy, recoverOnBoot, resetAnalysis, resetTranscript 
 import { getSettings, publicSettings, saveSettings } from "./settings";
 import { deleteLecture, docs, freshSteps, getLecture, listFolders, listLectures, newId, saveFolders, saveLecture, updateLecture } from "./store";
 import { chat, generateMoreCards, generateQuiz, gradeAnswer, newCard, startMaterial } from "./study";
+import { startStudyPage } from "./studypages";
+import { createExam, deleteExam, getExam, listExams, saveAnswers, startAttempt, submitAttempt } from "./exam";
+import { DOC_TYPES } from "./prompts-doc";
 import { FFMPEG, ffmpegVersion } from "./tools/ffmpeg";
 import { installYtdlp, resolveYtdlp } from "./tools/ytdlp";
 import { WHISPER_MODELS, downloads, installModel, installWhisper, resolveWhisper, whisperStatus } from "./tools/whisper";
@@ -171,6 +174,7 @@ app.post("/api/lectures", async (c) => {
     title?: string;
     subtitleUploadId?: string;
     folderId?: string;
+    tags?: string[];
     options?: Partial<LectureOptions>;
   };
   const s = getSettings();
@@ -180,6 +184,7 @@ app.post("/api/lectures", async (c) => {
 
   let mediaPath: string | undefined;
   const value = body.source.value.trim().replace(/^"(.*)"$/, "$1");
+  const isPdf = /\.pdf$/i.test(body.source.kind === "upload" ? body.source.uploadId ?? "" : value);
   if (body.source.kind === "upload") {
     const src = path.join(UPLOADS, path.basename(body.source.uploadId ?? ""));
     if (!fs.existsSync(src)) return c.json({ error: "업로드된 파일을 찾을 수 없습니다." }, 400);
@@ -188,6 +193,7 @@ app.post("/api/lectures", async (c) => {
     fs.renameSync(src, mediaPath);
   } else if (body.source.kind === "path") {
     if (!fs.existsSync(value)) return c.json({ error: `파일을 찾을 수 없습니다: ${value}` }, 400);
+    if (isPdf) mediaPath = value;
   } else if (!/^https?:\/\//i.test(value)) {
     return c.json({ error: "http(s) URL을 입력해 주세요." }, 400);
   }
@@ -204,16 +210,17 @@ app.post("/api/lectures", async (c) => {
     (body.source.kind === "url" ? value : path.basename(value).replace(/\.[^.]+$/, ""));
   const lecture: Lecture = {
     id,
+    kind: isPdf ? "doc" : "video",
     title: defaultTitle,
     createdAt: Date.now(),
     updatedAt: Date.now(),
     source: { kind: body.source.kind, value },
     mediaPath,
-    hasVideo: true,
+    hasVideo: !isPdf,
     hasThumbnail: false,
     durationSec: 0,
     status: "queued",
-    steps: freshSteps(),
+    steps: freshSteps(isPdf ? "doc" : "video"),
     options: {
       analysis: s.analysis,
       transcription: s.transcription,
@@ -227,6 +234,7 @@ app.post("/api/lectures", async (c) => {
     usage: { inputTokens: 0, outputTokens: 0, audioSeconds: 0 },
     analyzed: false,
     folderId: listFolders().some((f) => f.id === body.folderId) ? body.folderId : undefined,
+    tags: cleanTags(body.tags),
   };
   saveLecture(lecture);
   enqueue(id);
@@ -236,15 +244,44 @@ app.post("/api/lectures", async (c) => {
 app.get("/api/lectures/:id", (c) => c.json({ ...must(c.req.param("id")), busy: isBusy(c.req.param("id")) }));
 
 app.patch("/api/lectures/:id", async (c) => {
-  const body = (await c.req.json()) as { title?: string; folderId?: string | null; options?: Partial<LectureOptions> };
+  const body = (await c.req.json()) as { title?: string; folderId?: string | null; tags?: string[]; docType?: DocType; options?: Partial<LectureOptions> };
   if (body.folderId && !listFolders().some((f) => f.id === body.folderId)) return c.json({ error: "폴더를 찾을 수 없습니다." }, 404);
   const l = updateLecture(must(c.req.param("id")).id, (x) => {
     if (body.title?.trim()) x.title = body.title.trim().slice(0, 200);
     if (body.folderId !== undefined) x.folderId = body.folderId ?? undefined;
+    if (body.tags) x.tags = cleanTags(body.tags);
+    if (body.docType && x.kind === "doc" && DOC_TYPES.includes(body.docType)) x.docType = body.docType;
     if (body.options) x.options = { ...x.options, ...body.options };
   });
   return c.json(l);
 });
+
+/** Several items at once (multi-select drag, bulk tagging); one request, one refetch. */
+app.post("/api/lectures/bulk", async (c) => {
+  const body = (await c.req.json()) as { ids: string[]; folderId?: string | null; addTags?: string[]; removeTags?: string[] };
+  if (body.folderId && !listFolders().some((f) => f.id === body.folderId)) return c.json({ error: "폴더를 찾을 수 없습니다." }, 404);
+  const add = cleanTags(body.addTags);
+  const remove = new Set(cleanTags(body.removeTags));
+  for (const id of body.ids ?? []) {
+    if (!getLecture(id)) continue;
+    updateLecture(id, (x) => {
+      if (body.folderId !== undefined) x.folderId = body.folderId ?? undefined;
+      if (add.length || remove.size) x.tags = cleanTags([...(x.tags ?? []), ...add].filter((t) => !remove.has(t)));
+    });
+  }
+  return c.json({ ok: true });
+});
+
+/** Tags are short, trimmed and unique; "#" is decoration the UI adds. */
+function cleanTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  const out: string[] = [];
+  for (const t of tags) {
+    const v = String(t).replace(/^#+/, "").replace(/\s+/g, " ").trim().slice(0, 30);
+    if (v && !out.some((x) => x.toLowerCase() === v.toLowerCase())) out.push(v);
+  }
+  return out.slice(0, 20);
+}
 
 // --- library folders ---------------------------------------------------------------
 
@@ -346,6 +383,74 @@ app.get("/api/lectures/:id/frames/:file", (c) =>
 app.get("/api/lectures/:id/frames", (c) => c.json(docs.frames.get(c.req.param("id")) ?? []));
 app.get("/api/lectures/:id/transcript", (c) => c.json(docs.transcript.get(c.req.param("id"))));
 app.get("/api/lectures/:id/analysis", (c) => c.json(docs.analysis.get(c.req.param("id"))));
+
+/** The original PDF of a document, for the in-app viewer. */
+app.get("/api/lectures/:id/pdf", (c) => {
+  const l = must(c.req.param("id"));
+  if (l.kind !== "doc" || !l.mediaPath || !fs.existsSync(l.mediaPath)) return c.json({ error: "PDF가 없습니다." }, 404);
+  return c.body(fs.readFileSync(l.mediaPath), 200, { "Content-Type": "application/pdf", "Cache-Control": "no-cache" });
+});
+
+// --- interactive study pages ---------------------------------------------------------
+
+app.get("/api/lectures/:id/pages", (c) => c.json(docs.studyPages.get(must(c.req.param("id")).id)));
+
+app.post("/api/lectures/:id/pages", async (c) => {
+  const l = must(c.req.param("id"));
+  const { chapter, prompt } = (await c.req.json()) as { chapter: number; prompt?: string };
+  if (docs.studyPages.get(l.id).some((p) => p.chapter === chapter && p.status === "generating")) return c.json({ error: "이 챕터의 페이지를 이미 만들고 있어요." }, 409);
+  return c.json(startStudyPage(l, Number(chapter), (prompt ?? "").slice(0, 1000)));
+});
+
+app.delete("/api/lectures/:id/pages/:pid", (c) => {
+  const id = must(c.req.param("id")).id;
+  docs.studyPages.set(id, docs.studyPages.get(id).filter((p) => p.id !== c.req.param("pid")));
+  return c.json({ ok: true });
+});
+
+/**
+ * Everything a study page needs, inlined: browsers refuse network loads from
+ * a sandboxed (opaque-origin) frame, so the page carries the kit, KaTeX and
+ * its fonts itself. Built once per server run.
+ */
+let kitBundle: { css: string; scripts: string[] } | null = null;
+app.get("/api/kit-bundle", (c) => {
+  if (!kitBundle) {
+    const katex = path.join(ROOT, "node_modules", "katex", "dist");
+    const read = (f: string) => fs.readFileSync(f, "utf8");
+    // keep only the woff2 source of each @font-face, as a data URI
+    const katexCss = read(path.join(katex, "katex.min.css")).replace(/src:url\(fonts\/([\w-]+)\.woff2\)[^;}]*/g, (_, name: string) => {
+      const font = fs.readFileSync(path.join(katex, "fonts", `${name}.woff2`)).toString("base64");
+      return `src:url(data:font/woff2;base64,${font}) format("woff2")`;
+    });
+    // a literal "</script" would end the inline <script> early
+    const script = (f: string) => read(f).replace(/<\/script/gi, "<\\/script");
+    kitBundle = {
+      css: `${katexCss}\n${read(path.join(ROOT, "server", "kit", "kit.css"))}`,
+      scripts: [script(path.join(katex, "katex.min.js")), script(path.join(katex, "contrib", "auto-render.min.js")), script(path.join(ROOT, "server", "kit", "kit.js"))],
+    };
+  }
+  return c.json(kitBundle, 200, { "Cache-Control": "no-cache" });
+});
+
+/** Lens Kit files and pdf.js CMaps by URL (the PDF viewer and debugging use these). */
+const KIT_ASSETS: Record<string, string> = {
+  kit: path.join(ROOT, "server", "kit"),
+  katex: path.join(ROOT, "node_modules", "katex", "dist"),
+  // CJK CMaps and standard fonts for the in-app PDF viewer
+  pdfjs: path.join(ROOT, "node_modules", "pdfjs-dist"),
+};
+app.get("/api/kit/*", (c) => {
+  const rel = decodeURIComponent(new URL(c.req.url).pathname).replace(/^\/api\/kit\//, "");
+  const prefix = ["katex", "pdfjs"].find((k) => rel.startsWith(`${k}/`));
+  const [kind, ...rest] = prefix ? [prefix, rel.slice(prefix.length + 1)] : ["kit", rel];
+  const base = KIT_ASSETS[kind];
+  const file = path.normalize(path.join(base, ...rest));
+  if (!file.startsWith(base) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) return c.json({ error: "not found" }, 404);
+  if (kind === "pdfjs" && !/^(cmaps|standard_fonts)[\\/]/.test(path.relative(base, file))) return c.json({ error: "not found" }, 404);
+  const type = { ".js": "text/javascript", ".css": "text/css", ".woff2": "font/woff2", ".woff": "font/woff", ".ttf": "font/ttf" }[path.extname(file)] ?? "application/octet-stream";
+  return c.body(fs.readFileSync(file), 200, { "Content-Type": type, "Access-Control-Allow-Origin": "*", "Cache-Control": kind === "kit" ? "no-cache" : "max-age=86400" });
+});
 
 // --- my notes -------------------------------------------------------------------
 
@@ -463,6 +568,53 @@ app.post("/api/lectures/:id/chat", async (c) => {
       await stream.writeSSE({ event: "error", data: JSON.stringify(msg) });
     }
   });
+});
+
+// --- course exams -------------------------------------------------------------------
+
+app.get("/api/exams", (c) => {
+  const folder = c.req.query("folder");
+  return c.json(listExams(folder === undefined ? undefined : folder || null));
+});
+
+app.post("/api/exams", async (c) => {
+  const body = (await c.req.json()) as { folderId?: string | null; title?: string; config: Partial<ExamConfig> };
+  const cfg = body.config ?? {};
+  const ids = (cfg.lectureIds ?? []).filter((id) => getLecture(id)?.analyzed);
+  if (!ids.length) return c.json({ error: "분석이 끝난 자료를 하나 이상 골라 주세요." }, 400);
+  const config: ExamConfig = {
+    lectureIds: ids,
+    style: (["quiz", "midterm", "final"] as const).includes(cfg.style as ExamConfig["style"]) ? (cfg.style as ExamConfig["style"]) : "midterm",
+    count: Math.min(50, Math.max(3, Math.round(Number(cfg.count) || 15))),
+    minutes: Math.min(240, Math.max(5, Math.round(Number(cfg.minutes) || 60))),
+    difficulty: (["easy", "mixed", "hard"] as const).includes(cfg.difficulty as ExamConfig["difficulty"]) ? (cfg.difficulty as ExamConfig["difficulty"]) : "mixed",
+    mcqShare: Math.min(1, Math.max(0, Number(cfg.mcqShare ?? 0.5))),
+    focus: String(cfg.focus ?? "").slice(0, 1000),
+  };
+  const folderId = body.folderId && listFolders().some((f) => f.id === body.folderId) ? body.folderId : null;
+  return c.json(createExam(folderId, config, body.title));
+});
+
+function mustExam(id: string) {
+  const e = getExam(id);
+  if (!e) throw Object.assign(new Error("시험을 찾을 수 없습니다."), { status: 404 });
+  return e;
+}
+
+app.get("/api/exams/:id", (c) => c.json(mustExam(c.req.param("id"))));
+app.delete("/api/exams/:id", (c) => {
+  deleteExam(mustExam(c.req.param("id")).id);
+  return c.json({ ok: true });
+});
+app.post("/api/exams/:id/attempts", (c) => c.json(startAttempt(mustExam(c.req.param("id")).id)));
+app.put("/api/exams/:id/attempts/:aid", async (c) => {
+  const { answers } = (await c.req.json()) as { answers: Record<string, string> };
+  saveAnswers(mustExam(c.req.param("id")).id, c.req.param("aid"), answers ?? {});
+  return c.json({ ok: true });
+});
+app.post("/api/exams/:id/attempts/:aid/submit", async (c) => {
+  const { answers } = (await c.req.json()) as { answers: Record<string, string> };
+  return c.json(submitAttempt(mustExam(c.req.param("id")).id, c.req.param("aid"), answers ?? {}));
 });
 
 // --- export -------------------------------------------------------------------

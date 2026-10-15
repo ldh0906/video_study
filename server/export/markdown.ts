@@ -7,8 +7,8 @@ import remarkRehype from "remark-rehype";
 import rehypeKatex from "rehype-katex";
 import rehypeHighlight from "rehype-highlight";
 import rehypeStringify from "rehype-stringify";
+import { fmtAnchor, type AnchorUnit } from "../../shared/anchor";
 import { preprocessMarkdown } from "../../shared/markdown";
-import { fmtTime } from "../../shared/time";
 
 interface HastNode {
   type: string;
@@ -23,17 +23,17 @@ interface HastNode {
  * - "#t=754" timestamp links → real video links (or plain text when there is no link)
  * - headings inside notes are demoted so the PDF outline stays part > chapter > section
  */
-function rehypePrint(opts: { linkFor: (sec: number) => string | null; headingOffset: number }) {
+function rehypePrint(opts: { linkFor: (sec: number) => string | null; headingOffset: number; unit: AnchorUnit }) {
   return () => (tree: HastNode) => {
     const walk = (node: HastNode) => {
       if (node.type === "element") {
         const m = node.tagName?.match(/^h([1-6])$/);
         if (m) node.tagName = `h${Math.min(6, Number(m[1]) + opts.headingOffset)}`;
         const href = node.properties?.href;
-        if (node.tagName === "a" && typeof href === "string" && href.startsWith("#t=")) {
+        if (node.tagName === "a" && typeof href === "string" && (href.startsWith("#t=") || href.startsWith("#p="))) {
           const sec = Number(href.slice(3));
           const link = opts.linkFor(sec);
-          const label: HastNode = { type: "text", value: `▶${fmtTime(sec)}` };
+          const label: HastNode = { type: "text", value: opts.unit === "page" ? fmtAnchor("page", sec) : `▶${fmtAnchor("time", sec)}` };
           node.properties = { className: ["ts"], ...(link ? { href: link } : {}) };
           if (!link) node.tagName = "span";
           node.children = [label];
@@ -45,7 +45,7 @@ function rehypePrint(opts: { linkFor: (sec: number) => string | null; headingOff
   };
 }
 
-export function createRenderer(linkFor: (sec: number) => string | null) {
+export function createRenderer(linkFor: (sec: number) => string | null, unit: AnchorUnit = "time") {
   const make = (headingOffset: number) =>
     unified()
       .use(remarkParse)
@@ -55,13 +55,13 @@ export function createRenderer(linkFor: (sec: number) => string | null) {
       .use(remarkRehype)
       .use(rehypeKatex, { strict: false, throwOnError: false, output: "html" } as never)
       .use(rehypeHighlight, { detect: false })
-      .use(rehypePrint({ linkFor, headingOffset }))
+      .use(rehypePrint({ linkFor, headingOffset, unit }))
       .use(rehypeStringify);
   const processors = new Map<number, ReturnType<typeof make>>();
   return (md: string, headingOffset = 2): string => {
     if (!md?.trim()) return "";
     let p = processors.get(headingOffset);
     if (!p) processors.set(headingOffset, (p = make(headingOffset)));
-    return String(p.processSync(preprocessMarkdown(md)));
+    return String(p.processSync(preprocessMarkdown(md, { unit })));
   };
 }

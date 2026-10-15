@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Clock, Eye, FileUp, Pencil } from "lucide-react";
 import { toast } from "sonner";
-import { fmtTime } from "@shared/time";
 import type { Lecture } from "@shared/types";
 import { Markdown } from "@/components/Markdown";
 import { Button, Segmented } from "@/components/ui";
@@ -45,7 +44,7 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
   useEffect(() => {
     if (!loaded.current || !appendRequest || appendRequest.n === lastAppend.current) return;
     lastAppend.current = appendRequest.n;
-    const stamp = appendRequest.time !== null ? `[${fmtTime(appendRequest.time)}] ` : "";
+    const stamp = appendRequest.time !== null ? `[${player.fmt(appendRequest.time)}] ` : "";
     setContent((c) => `${c.trimEnd()}${c.trim() ? "\n\n" : ""}> ${stamp}${appendRequest.text.replace(/\n/g, "\n> ")}\n\n`);
     setSaved(false);
   }, [appendRequest, isSuccess]);
@@ -61,7 +60,7 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
 
   const insertTime = () => {
     const el = ta.current;
-    const stamp = `[${fmtTime(player.state.time)}] `;
+    const stamp = `[${player.fmt(player.state.time)}] `;
     if (!el) return setContent((c) => c + stamp);
     const { selectionStart: a, selectionEnd: b } = el;
     setContent((c) => c.slice(0, a) + stamp + c.slice(b));

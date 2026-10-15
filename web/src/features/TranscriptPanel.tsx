@@ -1,6 +1,5 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowDownToLine, ChevronDown, ChevronUp, Search, X } from "lucide-react";
-import { fmtTime } from "@shared/time";
 import type { Chapter, Segment, Transcript } from "@shared/types";
 import { Button, EmptyState, Spinner } from "@/components/ui";
 import { player, usePlayerSecond } from "@/lib/player";
@@ -40,7 +39,7 @@ const Row = memo(function Row({ seg, idx, active, query }: { seg: Segment; idx: 
       )}
     >
       <span className={cn("w-12 shrink-0 pt-[2px] text-right text-[11.5px] font-semibold tabular-nums", active ? "text-accent" : "text-faint group-hover:text-muted")}>
-        {fmtTime(seg.start)}
+        {player.fmt(seg.start)}
       </span>
       <p className={cn("min-w-0 flex-1 text-[14px] leading-[1.7]", active ? "text-text" : "text-text/80")}>{text}</p>
     </div>
@@ -172,7 +171,7 @@ export function TranscriptPanel({ transcript, chapters = [], loading }: { transc
             <Fragment key={i}>
               {chapter ? (
                 <button onClick={() => player.seek(chapter.start)} className="sticky top-0 z-[1] mt-3 mb-1 block w-full bg-surface/95 px-3 pt-2 pb-1.5 text-left backdrop-blur first:mt-0">
-                  <span className="text-[11.5px] font-semibold text-accent tabular-nums">{fmtTime(chapter.start)}</span>
+                  <span className="text-[11.5px] font-semibold text-accent tabular-nums">{player.fmt(chapter.start)}</span>
                   <span className="ml-2 text-[13.5px] font-semibold">{chapter.title}</span>
                 </button>
               ) : null}

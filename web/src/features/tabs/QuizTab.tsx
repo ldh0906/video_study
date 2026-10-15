@@ -48,7 +48,7 @@ export function QuizTab({ lecture }: { lecture: Lecture }) {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h3 className="font-serif text-[20px] font-semibold">퀴즈</h3>
-              <p className="mt-0.5 text-[13px] text-muted">풀어보면서 이해했는지 확인하세요. 틀린 문제는 해설과 영상 장면으로 바로 복습할 수 있어요.</p>
+              <p className="mt-0.5 text-[13px] text-muted">풀어보면서 이해했는지 확인하세요. 틀린 문제는 해설과 원본 위치로 바로 복습할 수 있어요.</p>
             </div>
             <Button variant="soft" size="sm" onClick={() => setGenOpen(true)}>
               <Plus className="size-3.5" /> 새 퀴즈
@@ -177,7 +177,7 @@ function QuizRunner({ lecture, quiz, onBack }: { lecture: Lecture; quiz: Quiz; o
                 ? "완벽해요! 이 강의는 확실히 이해했네요."
                 : score / answered.length >= 0.7
                   ? "잘했어요. 틀린 문제만 다시 보면 완벽해질 거예요."
-                  : "괜찮아요. 해설과 영상 장면으로 복습한 뒤 다시 도전해 보세요."}
+                  : "괜찮아요. 해설과 원본 위치로 복습한 뒤 다시 도전해 보세요."}
           </p>
           <div className="mt-6 flex flex-wrap justify-center gap-2">
             {score < answered.length ? (
@@ -364,7 +364,7 @@ function QuestionCard({
               <div className="mb-1 text-[12px] font-semibold tracking-wide text-muted">해설</div>
               <Markdown>{q.explanation}</Markdown>
             </div>
-            {q.time !== null ? <TimeChip time={q.time}>영상에서 다시 보기</TimeChip> : null}
+            {q.time !== null ? <TimeChip time={q.time}>원본에서 다시 보기</TimeChip> : null}
           </motion.div>
         ) : null}
       </div>

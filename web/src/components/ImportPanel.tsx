@@ -2,12 +2,12 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import { useNavigate } from "react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowRight, Captions, ChevronDown, FileVideo, Folder as FolderIcon, FolderOpen, Link2, SlidersHorizontal, Upload, X } from "lucide-react";
+import { ArrowRight, Captions, ChevronDown, FileText, FileVideo, Folder as FolderIcon, FolderOpen, Link2, SlidersHorizontal, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { OUTPUT_LANGUAGES } from "@shared/catalog";
 import type { LectureOptions, ModelChoice } from "@shared/types";
 import { api, uploadFile } from "@/lib/api";
-import { addImportFiles, runImportQueue, type ImportItem } from "@/lib/import-queue";
+import { addImportFiles, isPdf, runImportQueue, type ImportItem } from "@/lib/import-queue";
 import { cn } from "@/lib/utils";
 import { ModelPicker } from "./ModelPicker";
 import { useSettings } from "./SettingsDialog";
@@ -15,15 +15,15 @@ import { Button, Input, Label, Progress, Segmented, Switch, Textarea } from "./u
 
 type Mode = "file" | "url" | "path";
 
-const MEDIA_ACCEPT = "video/*,audio/*,.mkv,.mov,.m4a,.flac,.webm";
+const MEDIA_ACCEPT = "video/*,audio/*,.mkv,.mov,.m4a,.flac,.webm,.pdf,application/pdf";
 
 function fmtSize(bytes: number) {
   if (bytes > 1e9) return `${(bytes / 1e9).toFixed(2)} GB`;
   return `${Math.round(bytes / 1e6)} MB`;
 }
 
-/** `folder` is the library folder being viewed; new lectures are filed there. */
-export function ImportPanel({ folder }: { folder?: { id: string; name: string } }) {
+/** `folder` is the library folder being viewed; new lectures are filed there. `initialFiles` were dropped onto the library. */
+export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; name: string }; initialFiles?: File[] }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { data: settings } = useSettings();
@@ -55,6 +55,11 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
 
   useEffect(() => () => { stopRequested.current = true; }, []);
   useEffect(() => {
+    if (initialFiles?.length) addFiles(initialFiles);
+    // only the files the panel opened with
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialFiles]);
+  useEffect(() => {
     if (!busy) return;
     const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
     window.addEventListener("beforeunload", warn);
@@ -65,7 +70,7 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
     if (running.current) return;
     const result = addImportFiles(files, incoming);
     setFiles(result.items);
-    if (result.rejected.length) toast.error("영상·음성 또는 자막 파일을 선택해 주세요", { description: result.rejected.join(", ") });
+    if (result.rejected.length) toast.error("영상·음성·PDF 또는 자막 파일을 선택해 주세요", { description: result.rejected.join(", ") });
     if (result.unmatched.length) toast.warning("연결할 영상을 찾지 못한 자막이 있습니다", { description: `${result.unmatched.join(", ")} — 영상 옆 자막 버튼으로 직접 첨부해 주세요.` });
   };
 
@@ -104,7 +109,7 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
         }, () => stopRequested.current);
         const succeeded = results.filter((item) => item.status === "done");
         const failed = results.filter((item) => item.status === "error");
-        if (succeeded.length) toast.success(`${succeeded.length}개 강의를 등록했습니다`, { description: "각 영상은 별도 강의로 순서대로 분석합니다." });
+        if (succeeded.length) toast.success(`${succeeded.length}개 자료를 등록했습니다`, { description: "영상과 PDF는 각각 따로 순서대로 분석합니다." });
         if (failed.length) toast.error(`${failed.length}개 파일을 등록하지 못했습니다`, { description: "파일별 오류를 확인한 뒤 실패한 항목만 다시 시도할 수 있습니다." });
         if (!multiple && succeeded[0] && !stopRequested.current) navigate(`/lecture/${succeeded[0].lectureId}`);
         return;
@@ -173,7 +178,7 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
                   <FileVideo className="size-6" />
                 </div>
                 <div>
-                  <div className="max-w-[440px] truncate text-[15px] font-semibold">{files.length === 1 ? files[0].file.name : `${files.length}개 영상 · 각각 별도 강의로 등록`}</div>
+                  <div className="max-w-[440px] truncate text-[15px] font-semibold">{files.length === 1 ? files[0].file.name : `${files.length}개 파일 · 각각 따로 등록`}</div>
                   <div className="mt-0.5 text-[13px] text-muted">총 {fmtSize(files.reduce((sum, item) => sum + item.file.size, 0))} · 클릭하거나 드롭해서 파일 추가</div>
                 </div>
               </>
@@ -183,9 +188,9 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
                   <Upload className="size-5" />
                 </div>
                 <div>
-                  <div className="text-[15px] font-semibold">강의 영상을 끌어다 놓거나 클릭해서 선택하세요</div>
-                  <div className="mt-1 text-[13px] text-muted">MP4 · MKV · MOV · WebM · MP3 · M4A — 몇 시간짜리 강의도 괜찮아요</div>
-                  <div className="mt-1 text-xs text-accent">여러 파일을 한 번에 선택하면 각각 별도 강의로 등록합니다</div>
+                  <div className="text-[15px] font-semibold">강의 영상이나 PDF를 끌어다 놓거나 클릭해서 선택하세요</div>
+                  <div className="mt-1 text-[13px] text-muted">MP4 · MKV · MOV · MP3 · M4A · PDF(교재·강의자료·과제·실습·기출)</div>
+                  <div className="mt-1 text-xs text-accent">여러 파일을 한 번에 선택하면 각각 따로 등록합니다</div>
                 </div>
               </>
             )}
@@ -218,25 +223,25 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
         {mode === "file" && files.length > 0 ? (
           <div className="mt-3 space-y-2 px-2">
             <div className="flex items-center justify-between gap-3 text-xs text-muted">
-              <span>영상별 자막을 첨부할 수 있어요. 같은 이름의 자막을 함께 놓으면 자동 연결합니다.</span>
+              <span>영상에는 자막을 첨부할 수 있어요. 같은 이름의 자막을 함께 놓으면 자동 연결합니다.</span>
               <button type="button" onClick={() => setFiles([])} className="shrink-0 hover:text-text">목록 비우기</button>
             </div>
             <ul className="max-h-[340px] space-y-2 overflow-y-auto" aria-label="가져올 영상 목록">
               {files.map((item) => (
                 <li key={item.id} className="rounded-xl border border-border bg-surface-2/50 p-3">
                   <div className="flex items-start gap-2">
-                    <FileVideo className="mt-0.5 size-4 shrink-0 text-muted" />
+                    {isPdf(item.file) ? <FileText className="mt-0.5 size-4 shrink-0 text-muted" /> : <FileVideo className="mt-0.5 size-4 shrink-0 text-muted" />}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm font-medium" title={item.file.name}>{item.file.name}</p>
                       <p className={cn("mt-1 text-xs", item.status === "error" ? "text-danger" : item.status === "done" ? "text-accent" : "text-muted")}>
-                        {fmtSize(item.file.size)} · {item.status === "uploading" ? `업로드 ${Math.round(item.progress * 100)}%` : item.status === "subtitle" ? "자막 업로드 중" : item.status === "creating" ? "강의 등록 중" : item.status === "done" ? "등록 완료 · 분석 대기열에 추가됨" : item.status === "error" ? "등록 실패" : "등록 대기"}
+                        {fmtSize(item.file.size)} · {item.status === "uploading" ? `업로드 ${Math.round(item.progress * 100)}%` : item.status === "subtitle" ? "자막 업로드 중" : item.status === "creating" ? "등록 중" : item.status === "done" ? "등록 완료 · 분석 대기열에 추가됨" : item.status === "error" ? "등록 실패" : "등록 대기"}
                       </p>
                       {item.status === "uploading" ? <Progress value={item.progress} className="mt-2" /> : null}
                       {item.error ? <p className="mt-1 break-words text-xs text-danger">{item.error}</p> : null}
                       <div className="mt-2 flex flex-wrap items-center gap-2">
                         {item.status === "done" ? (
-                          <button type="button" onClick={() => navigate(`/lecture/${item.lectureId}`)} className="text-xs font-medium text-accent">강의 열기 →</button>
-                        ) : (
+                          <button type="button" onClick={() => navigate(`/lecture/${item.lectureId}`)} className="text-xs font-medium text-accent">열기 →</button>
+                        ) : isPdf(item.file) ? null : (
                           <Button size="sm" variant="ghost" onClick={() => chooseSubtitle(item.id)} aria-label={`${item.file.name} 자막 ${item.subtitle ? "변경" : "첨부"}`}><Captions className="size-3.5" />{item.subtitle ? "자막 변경" : "자막 첨부"}</Button>
                         )}
                         {item.subtitle ? <span className="flex min-w-0 items-center gap-1 text-xs text-muted"><span className="truncate" title={item.subtitle.name}>{item.subtitle.name}</span>{item.status !== "done" ? <button type="button" onClick={() => setItemSubtitle(item.id)} aria-label={`${item.file.name} 자막 제거`}><X className="size-3.5" /></button> : null}</span> : null}
@@ -333,7 +338,7 @@ export function ImportPanel({ folder }: { folder?: { id: string; name: string } 
         </div>
         {busy && mode === "file" ? <Button size="sm" disabled={stopping} onClick={() => { stopRequested.current = true; setStopping(true); }}>{stopping ? "현재 파일 처리 후 멈춥니다" : "남은 업로드 멈추기"}</Button> : null}
         <Button variant="primary" size="lg" disabled={!ready} loading={busy} onClick={start} className="px-6">
-          {mode === "file" && files.length ? busy ? "등록 중" : remaining.length && remaining.every((item) => item.status === "error") ? `${remaining.length}개 다시 시도` : remaining.length ? `${remaining.length}개 강의 등록` : "등록 완료" : "분석 시작"} {!busy ? <ArrowRight className="size-4" /> : null}
+          {mode === "file" && files.length ? busy ? "등록 중" : remaining.length && remaining.every((item) => item.status === "error") ? `${remaining.length}개 다시 시도` : remaining.length ? `${remaining.length}개 등록` : "등록 완료" : "분석 시작"} {!busy ? <ArrowRight className="size-4" /> : null}
         </Button>
       </div>
 

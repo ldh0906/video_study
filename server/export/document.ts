@@ -1,5 +1,6 @@
 import QRCode from "qrcode";
-import { fmtDuration, fmtTime } from "../../shared/time";
+import { fmtAnchor, unitOf } from "../../shared/anchor";
+import { fmtDuration } from "../../shared/time";
 import type { Analysis, ExportOptions, Flashcard, Frame, Lecture, Material, Quiz, QuizQuestion, SectionAnalysis, Transcript } from "../../shared/types";
 import { createRenderer } from "./markdown";
 
@@ -155,7 +156,9 @@ export async function buildDocument(input: DocInput): Promise<{ html: string; la
   const ov = analysis.overview;
   const g = geometry(o);
   const linkFor = videoLinker(lecture, origin);
-  const md = createRenderer(linkFor);
+  const unit = unitOf(lecture);
+  const fmtTime = (v: number) => fmtAnchor(unit, v);
+  const md = createRenderer(linkFor, unit);
   const typing = o.fields;
   const labels: Record<string, string> = {};
   const namedPages: string[] = [];
@@ -163,7 +166,10 @@ export async function buildDocument(input: DocInput): Promise<{ html: string; la
 
   // ---- small builders ---------------------------------------------------------
   const ts = (sec: number, end?: number) => {
-    const label = `▶${fmtTime(sec)}${end !== undefined ? `–${fmtTime(end)}` : ""}`;
+    const label =
+      unit === "page"
+        ? `p.${sec}${end !== undefined && end - 1 > sec ? `–${end - 1}` : ""}`
+        : `▶${fmtTime(sec)}${end !== undefined ? `–${fmtTime(end)}` : ""}`;
     const href = linkFor(sec);
     return href ? `<a class="ts" href="${esc(href)}">${label}</a>` : `<span class="ts">${label}</span>`;
   };
@@ -226,7 +232,7 @@ export async function buildDocument(input: DocInput): Promise<{ html: string; la
   // ---- cover ----------------------------------------------------------------------
   if (o.cover) {
     const meta = [
-      ["강의 길이", fmtDuration(lecture.durationSec)],
+      unit === "page" ? ["분량", `${lecture.pageCount ?? "?"}쪽`] : ["강의 길이", fmtDuration(lecture.durationSec)],
       ["난이도", `${"●".repeat(ov.difficulty)}${"○".repeat(5 - ov.difficulty)}`],
       ["구성", `${chapters.length}개 챕터 · ${sections.length}개 섹션`],
       ["출처", isOnline ? clip(lecture.source.value, 60) : clip(lecture.source.value.split(/[\\/]/).pop() ?? "", 60)],

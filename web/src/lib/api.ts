@@ -1,6 +1,10 @@
 import type {
   Analysis,
   ChatMessage,
+  DocType,
+  Exam,
+  ExamAttempt,
+  ExamConfig,
   ExportFile,
   ExportOptions,
   ExportResult,
@@ -18,9 +22,11 @@ import type {
   PublicSettings,
   Quiz,
   Settings,
+  StudyPage,
   ToolStatus,
   Transcript,
 } from "@shared/types";
+import type { KitBundle } from "@shared/studypage";
 
 export type LectureSummary = Lecture & { cardsDue: number; cardsTotal: number };
 
@@ -64,9 +70,11 @@ export const api = {
     title?: string;
     subtitleUploadId?: string;
     folderId?: string;
+    tags?: string[];
     options?: Partial<LectureOptions>;
   }) => req<Lecture>("POST", "/api/lectures", body),
-  updateLecture: (id: string, patch: { title?: string; folderId?: string | null; options?: Partial<LectureOptions> }) => req<Lecture>("PATCH", L(id), patch),
+  updateLecture: (id: string, patch: { title?: string; folderId?: string | null; tags?: string[]; docType?: DocType; options?: Partial<LectureOptions> }) => req<Lecture>("PATCH", L(id), patch),
+  bulkUpdate: (body: { ids: string[]; folderId?: string | null; addTags?: string[]; removeTags?: string[] }) => req("POST", "/api/lectures/bulk", body),
   reviewItems: (folderId?: string) =>
     req<{ lectureId: string; lectureTitle: string; card: Flashcard }[]>("GET", `/api/review${folderId ? `?folder=${encodeURIComponent(folderId)}` : ""}`),
   folders: () => req<Folder[]>("GET", "/api/folders"),
@@ -117,6 +125,20 @@ export const api = {
     return data as { imported: number; checked: number; labels: string[] };
   },
 
+  studyPages: (id: string) => req<StudyPage[]>("GET", L(id, "/pages")),
+  createStudyPage: (id: string, chapter: number, prompt = "") => req<StudyPage>("POST", L(id, "/pages"), { chapter, prompt }),
+  deleteStudyPage: (id: string, pid: string) => req("DELETE", L(id, `/pages/${pid}`)),
+
+  exams: (folderId?: string | null) => req<Exam[]>("GET", `/api/exams${folderId === undefined ? "" : `?folder=${encodeURIComponent(folderId ?? "")}`}`),
+  exam: (id: string) => req<Exam>("GET", `/api/exams/${id}`),
+  createExam: (body: { folderId: string | null; title?: string; config: ExamConfig }) => req<Exam>("POST", "/api/exams", body),
+  deleteExam: (id: string) => req("DELETE", `/api/exams/${id}`),
+  startAttempt: (id: string) => req<ExamAttempt>("POST", `/api/exams/${id}/attempts`),
+  saveAnswers: (id: string, aid: string, answers: Record<string, string>) => req("PUT", `/api/exams/${id}/attempts/${aid}`, { answers }),
+  submitAttempt: (id: string, aid: string, answers: Record<string, string>) => req<ExamAttempt>("POST", `/api/exams/${id}/attempts/${aid}/submit`, { answers }),
+
+  kitBundle: () => req<KitBundle>("GET", "/api/kit-bundle"),
+  pdfUrl: (id: string) => L(id, "/pdf"),
   mediaUrl: (id: string) => L(id, "/media"),
   thumbUrl: (id: string, v?: number) => L(id, `/thumb${v ? `?v=${v}` : ""}`),
   frameUrl: (id: string, file: string) => L(id, `/frames/${file}`),

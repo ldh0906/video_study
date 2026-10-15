@@ -1,12 +1,25 @@
-import { fmtTime } from "../shared/time";
+import { fmtAnchor, unitOf, type AnchorUnit } from "../shared/anchor";
 import type { Analysis, ChatMessage, Flashcard, Lecture, Material, MaterialKind, ModelChoice, Quiz, QuizQuestion, Segment } from "../shared/types";
 import { generateObject, generateText, type LLMUsage } from "./llm";
 import { CardsSchema, GradeSchema, MATERIAL_PRESETS, QuizSchema, cardsSystem, chatSystem, materialSystem, quizSystem } from "./prompts";
-import { timestampFixer } from "./pipeline/timestamps";
+import { fixStrings, timestampFixer } from "./pipeline/timestamps";
 import { getSettings } from "./settings";
 import { docs, newId, updateLecture } from "./store";
 import { formatTranscript } from "./pipeline/analyze";
 import { estimateTokens, mapLimit, throttle } from "./pipeline/util";
+import { pageFixer } from "./pipeline/doc";
+
+/** Fix the anchors a model wrote: snap timestamps to transcript lines, or drop pages that don't exist. */
+export function anchorFixer(lecture: Lecture) {
+  if (lecture.kind === "doc") return pageFixer(lecture.pageCount ?? Number.MAX_SAFE_INTEGER);
+  return timestampFixer(docs.transcript.get(lecture.id)?.segments ?? [], lecture.durationSec);
+}
+
+/** Source text with an anchor on every line: transcript lines, or one block per PDF page. */
+export function formatSource(segments: Segment[], unit: AnchorUnit) {
+  if (unit === "time") return formatTranscript(segments);
+  return segments.map((s) => `[p.${s.start}]\n${s.text}`).join("\n\n");
+}
 
 export function addUsage(id: string, u: LLMUsage) {
   updateLecture(id, (l) => {
@@ -22,24 +35,29 @@ function requireAnalysis(id: string): Analysis {
 }
 
 /** Overview + full section notes: the main study context for generation. */
-export function notesContext(a: Analysis, sectionIdx?: number[]) {
+export function notesContext(a: Analysis, sectionIdx?: number[], unit: AnchorUnit = a.overview.docType ? "page" : "time") {
   const o = a.overview;
+  const at = (v: number) => fmtAnchor(unit, v);
+  const span = (start: number, end: number) => (unit === "page" ? `p.${start}–${Math.max(start, end - 1)}` : `${at(start)}–${at(end)}`);
   const sections = sectionIdx ? a.sections.filter((s) => sectionIdx.includes(s.index)) : a.sections;
   return [
     `# ${o.title}`,
     o.summary,
-    `Chapters:\n${o.chapters.map((c) => `- [${fmtTime(c.start)}] ${c.title}`).join("\n")}`,
+    `Chapters:\n${o.chapters.map((c) => `- [${at(c.start)}] ${c.title}`).join("\n")}`,
+    o.emphasis?.length ? `Marked important or required by the source:\n${o.emphasis.map((e) => `- [${at(e.time)}] ${e.text}`).join("\n")}` : "",
     ...sections.map((s) =>
       [
-        `## Part ${s.index + 1}: ${s.title} [${fmtTime(s.start)}–${fmtTime(s.end)}]`,
+        `## Part ${s.index + 1}: ${s.title} [${span(s.start, s.end)}]`,
         s.notes,
-        s.difficult.length ? `Difficult points:\n${s.difficult.map((d) => `- [${fmtTime(d.time)}] ${d.topic}: ${d.explanation}`).join("\n")}` : "",
-        s.flags?.length ? `Flagged claims (keep them flagged):\n${s.flags.map((f) => `- [${fmtTime(f.time)}] (${f.kind}) ${f.text}`).join("\n")}` : "",
+        s.difficult.length ? `Difficult points:\n${s.difficult.map((d) => `- [${at(d.time)}] ${d.topic}: ${d.explanation}`).join("\n")}` : "",
+        s.flags?.length ? `Flagged claims (keep them flagged):\n${s.flags.map((f) => `- [${at(f.time)}] (${f.kind}) ${f.text}`).join("\n")}` : "",
       ]
         .filter(Boolean)
         .join("\n\n"),
     ),
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 // ---------------------------------------------------------------------------
@@ -56,14 +74,14 @@ export async function generateMoreCards(lecture: Lecture, count: number, focus: 
   const existing = docs.flashcards.get(lecture.id);
   const { object, usage } = await generateObject({
     choice: lecture.options.analysis,
-    system: cardsSystem(lecture.options.outputLanguage),
+    system: cardsSystem(lecture.options.outputLanguage, unitOf(lecture)),
     messages: [
       {
         role: "user",
         content: [
-          notesContext(a),
+          notesContext(a, undefined, unitOf(lecture)),
           `Existing cards (do not duplicate):\n${existing.map((c) => `- ${c.front}`).join("\n")}`,
-          `Write ${count} new flashcards.${focus ? ` Focus on: ${focus}` : ""} Give each card the time (seconds) where its content is explained.`,
+          `Write ${count} new flashcards.${focus ? ` Focus on: ${focus}` : ""} Give each card the ${unitOf(lecture) === "page" ? "page number" : "time (seconds)"} where its content is explained.`,
         ].join("\n\n"),
       },
     ],
@@ -72,7 +90,8 @@ export async function generateMoreCards(lecture: Lecture, count: number, focus: 
     maxTokens: 16000,
   });
   addUsage(lecture.id, usage);
-  const cards = object.cards.map((c) => newCard(c.front, c.back, c.time));
+  const fix = anchorFixer(lecture);
+  const cards = object.cards.map((c) => newCard(fix(c.front), fix(c.back), c.time));
   docs.flashcards.set(lecture.id, [...existing, ...cards]);
   return cards;
 }
@@ -114,11 +133,11 @@ export async function generateQuiz(
   const results = await mapLimit(batches, 3, async (b, k) => {
     const { object, usage } = await generateObject({
       choice: lecture.options.analysis,
-      system: quizSystem(lecture.options.outputLanguage),
+      system: quizSystem(lecture.options.outputLanguage, unitOf(lecture)),
       messages: [
         {
           role: "user",
-          content: `${notesContext(a, b)}\n\nWrite ${counts[k]} questions about the material above. ${difficulty}${opts.focus ? ` Focus on: ${opts.focus}` : ""}`,
+          content: `${notesContext(a, b, unitOf(lecture))}\n\nWrite ${counts[k]} questions about the material above. ${difficulty}${opts.focus ? ` Focus on: ${opts.focus}` : ""}`,
         },
       ],
       schema: QuizSchema,
@@ -130,7 +149,7 @@ export async function generateQuiz(
     return object.questions;
   });
 
-  const questions: QuizQuestion[] = results.flat().map((q) => {
+  const questions: QuizQuestion[] = fixStrings(results.flat(), anchorFixer(lecture)).map((q) => {
     const isMcq = q.type === "mcq" && q.options.length >= 2 && q.answerIndex >= 0 && q.answerIndex < q.options.length;
     return {
       id: newId(),
@@ -211,11 +230,11 @@ export function startMaterial(lecture: Lecture, kind: MaterialKind, prompt: stri
   let content = "";
   generateText({
     choice: model,
-    system: materialSystem(lecture.options.outputLanguage),
+    system: materialSystem(lecture.options.outputLanguage, unitOf(lecture)),
     messages: [
       {
         role: "user",
-        content: `${notesContext(a)}\n\n---\nTask: ${preset.instruction}${prompt ? `\n\nStudent's request: ${prompt}` : ""}`,
+        content: `${notesContext(a, undefined, unitOf(lecture))}\n\n---\nTask: ${preset.instruction}${prompt ? `\n\nStudent's request: ${prompt}` : ""}`,
       },
     ],
     maxTokens: 48000,
@@ -226,7 +245,7 @@ export function startMaterial(lecture: Lecture, kind: MaterialKind, prompt: stri
   })
     .then((res) => {
       addUsage(lecture.id, res.usage);
-      const fixTimes = timestampFixer(docs.transcript.get(lecture.id)?.segments ?? [], lecture.durationSec);
+      const fixTimes = anchorFixer(lecture);
       // let any pending throttled write land first
       setTimeout(() => save({ content: fixTimes(res.text || content), status: "done" }), 900);
     })
@@ -246,12 +265,13 @@ function tokenize(s: string) {
   return s.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [];
 }
 
-/** Tiny BM25 over ~90 s transcript windows, for lectures too long to send whole. */
-function retrieve(segments: Segment[], query: string, anchor: number | null, k = 10): Segment[][] {
+/** Tiny BM25 over ~90 s transcript windows (or two-page windows of a PDF), for sources too long to send whole. */
+function retrieve(segments: Segment[], query: string, anchor: number | null, unit: AnchorUnit, k = 10): Segment[][] {
+  const span = unit === "page" ? 1 : 90;
   const windows: Segment[][] = [];
   let cur: Segment[] = [];
   for (const s of segments) {
-    if (cur.length && s.start - cur[0].start > 90) {
+    if (cur.length && s.start - cur[0].start > span) {
       windows.push(cur);
       cur = [];
     }
@@ -271,7 +291,7 @@ function retrieve(segments: Segment[], query: string, anchor: number | null, k =
       const idf = Math.log(1 + (windows.length - (df.get(t) ?? 0) + 0.5) / ((df.get(t) ?? 0) + 0.5));
       score += (idf * f * 2.2) / (f + 1.2 * (0.25 + 0.75 * (d.length / avg)));
     }
-    if (anchor !== null && windows[i][0].start <= anchor + 90 && windows[i].at(-1)!.end >= anchor - 90) score += 100;
+    if (anchor !== null && windows[i][0].start <= anchor + span && windows[i].at(-1)!.end >= anchor - span) score += 100;
     return { i, score };
   });
   return scores
@@ -290,30 +310,31 @@ export async function chat(
   signal: AbortSignal,
 ): Promise<ChatMessage> {
   const settings = getSettings();
+  const unit = unitOf(lecture);
   const a = docs.analysis.get(lecture.id);
   const transcript = docs.transcript.get(lecture.id);
   const segments = transcript?.segments ?? [];
-  const fullTranscript = formatTranscript(segments);
-  const base = a ? notesContext(a) : "";
+  const fullTranscript = formatSource(segments, unit);
+  const base = a ? notesContext(a, undefined, unit) : "";
   const sendFull = estimateTokens(base + fullTranscript) < FULL_TRANSCRIPT_BUDGET;
   // The system prompt stays byte-identical across turns so it can be cached.
-  const context = sendFull ? `${base}\n\n# Full transcript\n${fullTranscript}` : base;
+  const context = sendFull ? `${base}\n\n# Full ${unit === "page" ? "document text" : "transcript"}\n${fullTranscript}` : base;
 
   const history = docs.chat.get(lecture.id);
   const userMsg: ChatMessage = { id: newId(), role: "user", content: message, createdAt: Date.now(), anchor };
   docs.chat.set(lecture.id, [...history, userMsg]);
 
   let content = message;
-  if (anchor !== null) content = `(The student is watching the video at [${fmtTime(anchor)}].)\n\n${content}`;
+  if (anchor !== null) content = unit === "page" ? `(The student is looking at page [p.${anchor}].)\n\n${content}` : `(The student is watching the video at [${fmtAnchor(unit, anchor)}].)\n\n${content}`;
   if (!sendFull) {
-    const excerpts = retrieve(segments, message, anchor);
-    if (excerpts.length) content = `Relevant transcript excerpts:\n${excerpts.map((w) => formatTranscript(w)).join("\n…\n")}\n\n---\n${content}`;
+    const excerpts = retrieve(segments, message, anchor, unit);
+    if (excerpts.length) content = `Relevant ${unit === "page" ? "pages" : "transcript excerpts"}:\n${excerpts.map((w) => formatSource(w, unit)).join("\n…\n")}\n\n---\n${content}`;
   }
 
   const recent = history.filter((m) => !m.error).slice(-16);
   const res = await generateText({
     choice: settings.chat,
-    system: chatSystem(lecture.options.outputLanguage, context),
+    system: chatSystem(lecture.options.outputLanguage, context, unit),
     cacheSystem: true,
     messages: [...recent.map((m) => ({ role: m.role, content: m.content })), { role: "user", content }],
     maxTokens: 16000,

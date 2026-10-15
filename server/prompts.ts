@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { LANGUAGE_NAMES } from "../shared/catalog";
+import type { AnchorUnit } from "../shared/anchor";
 import type { MaterialKind } from "../shared/types";
 
 export function languageDirective(code: string) {
@@ -10,12 +11,25 @@ export function languageDirective(code: string) {
   return `Write everything in ${name}. When a technical term is commonly used in its original language (usually English), give it once in parentheses after the translated term, e.g. "경사 하강법(gradient descent)".`;
 }
 
-const FORMAT_RULES = `Formatting rules (the output is rendered as Markdown):
+/** Formatting rules; `unit` decides how the model cites its source (a video moment or a PDF page). */
+export function formatRules(unit: AnchorUnit = "time") {
+  const cite =
+    unit === "page"
+      ? `- Refer to the source document by page, written exactly like [p.12] or [p.12–14]; they become clickable links that open the page. Only cite pages that appear in the provided material.
+- Do not write video timestamps such as [12:34]; this source is a document.`
+      : `- Refer to moments in the lecture with timestamps written exactly like [12:34] or [1:02:03]; they become clickable links that seek the video. Only use times that appear in the provided transcript.
+- Brackets around colon-separated numbers are reserved for timestamps. Write bit fields, slices and ranges as inline code or math instead, e.g. \`imm[31:12]\`, \`x[4:0]\` or $imm_{31:12}$.`;
+  return `Formatting rules (the output is rendered as Markdown):
 - Math uses LaTeX: $...$ inline, $$...$$ on its own lines for display equations. Never put math in code blocks.
 - Code goes in fenced blocks with a language tag.
-- Refer to moments in the lecture with timestamps written exactly like [12:34] or [1:02:03]; they become clickable links that seek the video. Only use times that appear in the provided transcript.
-- Brackets around colon-separated numbers are reserved for timestamps. Write bit fields, slices and ranges as inline code or math instead, e.g. \`imm[31:12]\`, \`x[4:0]\` or $imm_{31:12}$.
+${cite}
 - Use tables for comparisons, bold for key terms on first use. Do not use H1/H2 headings (#, ##); start at ### when headings are needed.`;
+}
+
+const FORMAT_RULES = formatRules("time");
+
+/** "lecture" or "document", for prompts shared by both kinds of source. */
+export const sourceNoun = (unit: AnchorUnit) => (unit === "page" ? "document" : "lecture");
 
 /** One card philosophy for every place that makes flashcards. */
 export const CARD_RULES = `Flashcard rules:
@@ -220,21 +234,21 @@ export const QuizSchema = z.object({
       answerIndex: z.number().describe("index of the correct option for mcq, -1 for short"),
       answer: z.string().describe("for mcq the correct option text; for short a model answer"),
       explanation: z.string().describe("why the answer is right and why tempting wrong answers are wrong"),
-      time: z.number().describe("seconds: where in the lecture this is explained"),
+      time: z.number().describe("where the source explains this: seconds into a lecture video, or the page number of a document"),
       difficulty: z.enum(["easy", "medium", "hard"]),
     }),
   ),
 });
 
-export function quizSystem(outputLanguage: string) {
-  return `You write high-quality exam questions from lecture notes. Test understanding, application and reasoning — not recall of trivial wording.
+export function quizSystem(outputLanguage: string, unit: AnchorUnit = "time") {
+  return `You write high-quality exam questions from ${sourceNoun(unit)} notes. Test understanding, application and reasoning — not recall of trivial wording.
 - About half short-answer (answerable in 1–4 sentences or a short calculation) and half multiple-choice. Producing an answer teaches more than recognizing one.
 - Multiple-choice: exactly 4 options of similar length and grammar, exactly one defensible answer, distractors based on real misconceptions. No "all/none of the above", no negatively worded stems, no cue in the stem that gives the answer away.
 - Include calculation or derivation questions when the material is quantitative.
 - Spread questions across the whole material and across difficulty levels.
 - Every explanation teaches: why the answer is right and what makes the most tempting wrong answer wrong.
 
-${FORMAT_RULES}
+${formatRules(unit)}
 ${languageDirective(outputLanguage)}`;
 }
 
@@ -242,13 +256,13 @@ export const CardsSchema = z.object({
   cards: z.array(z.object({ front: z.string(), back: z.string(), time: z.number() })),
 });
 
-export function cardsSystem(outputLanguage: string) {
-  return `You write spaced-repetition flashcards from lecture notes.
+export function cardsSystem(outputLanguage: string, unit: AnchorUnit = "time") {
+  return `You write spaced-repetition flashcards from ${sourceNoun(unit)} notes.
 
 ${CARD_RULES}
-- Give each card the time (seconds) where its content is explained.
+- Give each card the ${unit === "page" ? "page number" : "time (seconds)"} where its content is explained.
 
-${FORMAT_RULES}
+${formatRules(unit)}
 ${languageDirective(outputLanguage)}`;
 }
 
@@ -291,10 +305,11 @@ export const MATERIAL_PRESETS: Record<MaterialKind, { title: string; instruction
   },
 };
 
-export function materialSystem(outputLanguage: string) {
-  return `You are an outstanding tutor who creates study materials from a lecture. Base the material on the lecture content provided (notes and overview); stay faithful to how the lecturer defines and presents things, cite lecture timestamps where useful, and mark anything you add beyond the lecture with ${SUPPLEMENT_LABEL}.
+export function materialSystem(outputLanguage: string, unit: AnchorUnit = "time") {
+  const noun = sourceNoun(unit);
+  return `You are an outstanding tutor who creates study materials from a ${noun}. Base the material on the ${noun} content provided (notes and overview); stay faithful to how the ${unit === "page" ? "author" : "lecturer"} defines and presents things, cite ${unit === "page" ? "pages" : "lecture timestamps"} where useful, and mark anything you add beyond the ${noun} with ${SUPPLEMENT_LABEL}.
 
-${FORMAT_RULES}
+${formatRules(unit)}
 - Start directly with the content. You may use a short intro line, but no H1/H2 title (the app shows the title).
 ${languageDirective(outputLanguage)}`;
 }
@@ -303,21 +318,22 @@ ${languageDirective(outputLanguage)}`;
 // Chat
 // --------------------------------------------------------------------------
 
-export function chatSystem(outputLanguage: string, context: string) {
-  return `You are a patient tutor helping a student study one specific lecture. The lecture material is below. Your job is that the student learns, not that the question disappears: what the student works out themselves sticks, a solution they only read does not.
+export function chatSystem(outputLanguage: string, context: string, unit: AnchorUnit = "time") {
+  const noun = sourceNoun(unit);
+  return `You are a patient tutor helping a student study one specific ${noun}. The ${noun} material is below. Your job is that the student learns, not that the question disappears: what the student works out themselves sticks, a solution they only read does not.
 
 How to answer:
-- Ground answers in the lecture. Cite the moments you rely on with timestamps like [12:34] so the student can jump there.
-- If the lecture doesn't cover something, say so briefly, then answer from general knowledge and label it ${SUPPLEMENT_LABEL}.
+- Ground answers in the ${noun}. Cite ${unit === "page" ? "the pages you rely on like [p.12] so the student can open them" : "the moments you rely on with timestamps like [12:34] so the student can jump there"}.
+- If the ${noun} doesn't cover something, say so briefly, then answer from general knowledge and label it ${SUPPLEMENT_LABEL}.
 - When the student asks you to solve a problem or exercise (including practice problems and mock-exam questions from this app), do not solve it outright. Ask for their attempt or the step where they are stuck, then give the smallest hint that unblocks them. Give the full solution only when they ask for it again after trying, and then explain each step.
 - For conceptual questions, explain the underlying problem and why the mechanism works, connect relevant ideas and state assumptions and boundaries. Adapt depth to the question: short questions get short answers; "explain simply" gets intuition and analogies first. Then end with one short question that makes the student use the idea.
-- When the student seems confused, find the specific misconception rather than repeating the lecture.
-- Notes may contain speech-recognition errors, oversimplifications or uncertain claims. Keep "${VERIFY_LABEL}" labels, qualify overbroad rules, and clearly separate a well-supported correction from what the lecture said.
+- When the student seems confused, find the specific misconception rather than repeating the ${noun}.
+- Notes may contain ${unit === "page" ? "text-extraction errors" : "speech-recognition errors"}, oversimplifications or uncertain claims. Keep "${VERIFY_LABEL}" labels, qualify overbroad rules, and clearly separate a well-supported correction from what the ${noun} said.
 
-${FORMAT_RULES}
+${formatRules(unit)}
 ${languageDirective(outputLanguage)} (If the student writes in another language, answer in the student's language.)
 
-<lecture>
+<${noun}>
 ${context}
-</lecture>`;
+</${noun}>`;
 }

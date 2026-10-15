@@ -1,10 +1,9 @@
 import { useCallback, useMemo, useState } from "react";
 import { ChevronRight, Crosshair, Eye, FileText, PenLine, Sparkle } from "lucide-react";
-import { fmtTime } from "@shared/time";
 import type { Analysis, Lecture, SelfCheck } from "@shared/types";
 import { Markdown, TimeChip } from "@/components/Markdown";
 import { Button, Menu, MenuItem, Textarea, Tooltip } from "@/components/ui";
-import { usePlayerSecond } from "@/lib/player";
+import { player, usePlayerSecond } from "@/lib/player";
 import { cn } from "@/lib/utils";
 import { SelectionActions } from "../SelectionActions";
 
@@ -116,7 +115,7 @@ export function NotesTab({ analysis, scroller }: { lecture: Lecture; analysis: A
     >
       <header className="mb-4 flex flex-wrap items-center gap-x-2 gap-y-1">
         <TimeChip time={s.start}>
-          {fmtTime(s.start)}–{fmtTime(s.end)}
+          {player.fmt(s.start)}–{player.fmt(player.state.unit === "page" ? Math.max(s.start, s.end - 1) : s.end)}
         </TimeChip>
         <h4 className="text-[16.5px] font-semibold tracking-tight">{s.title}</h4>
         {activeSection === s.index ? <span className="ml-auto text-[11.5px] font-medium text-accent">지금 보는 부분</span> : null}
@@ -155,7 +154,7 @@ export function NotesTab({ analysis, scroller }: { lecture: Lecture; analysis: A
           <div className="max-h-[60vh] overflow-y-auto">
             {analysis.sections.map((s) => (
               <MenuItem key={s.index} onSelect={() => document.getElementById(`sec-${s.index}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-                <span className="w-11 shrink-0 text-xs text-faint tabular-nums">{fmtTime(s.start)}</span>
+                <span className="w-11 shrink-0 text-xs text-faint tabular-nums">{player.fmt(s.start)}</span>
                 <span className="truncate">{s.title}</span>
               </MenuItem>
             ))}

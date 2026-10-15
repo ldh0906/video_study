@@ -107,10 +107,10 @@ export function ReviewSession({
   const isNew = card.state === undefined ? card.reps === 0 : card.state === 0;
   const source =
     card.time === null ? null : inLecture ? (
-      <TimeChip time={card.time}>영상에서 보기</TimeChip>
+      <TimeChip time={card.time}>원본에서 보기</TimeChip>
     ) : (
       <Link to={`/lecture/${item.lectureId}?t=${Math.floor(card.time)}`} className="rounded-md bg-accent-soft px-1.5 py-[1px] text-[11.5px] font-semibold text-accent hover:bg-accent hover:text-accent-fg">
-        강의에서 보기
+        원본에서 보기
       </Link>
     );
 

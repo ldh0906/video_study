@@ -2,12 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowUp, Clock, Copy, Eraser, Layers, Sparkles, Square } from "lucide-react";
 import { toast } from "sonner";
-import { fmtTime } from "@shared/time";
 import type { ChatMessage, Lecture } from "@shared/types";
 import { Markdown } from "@/components/Markdown";
 import { Button, Tooltip } from "@/components/ui";
 import { api, streamChat } from "@/lib/api";
-import { player, usePlayerSecond } from "@/lib/player";
+import { player, useAnchorUnit, usePlayerSecond } from "@/lib/player";
 import { cn } from "@/lib/utils";
 import { useStudy } from "../study-context";
 
@@ -16,6 +15,12 @@ const SUGGESTIONS = [
   "가장 어려운 개념을 비유를 들어 쉽게 설명해 줘",
   "시험에 나올 만한 내용은 뭐야?",
   "이 강의를 이해하려면 뭘 먼저 알아야 해?",
+];
+const DOC_SUGGESTIONS = [
+  "이 자료의 핵심을 5줄로 정리해 줘",
+  "가장 어려운 개념을 비유를 들어 쉽게 설명해 줘",
+  "시험에 나올 만한 내용은 뭐야?",
+  "이 자료를 이해하려면 뭘 먼저 알아야 해?",
 ];
 
 export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lecture; pending: { text: string; anchor: number | null } | null; onPendingConsumed: () => void }) {
@@ -30,6 +35,8 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
   const bottom = useRef<HTMLDivElement>(null);
   const textarea = useRef<HTMLTextAreaElement>(null);
   const second = usePlayerSecond();
+  const unit = useAnchorUnit();
+  const spot = unit === "page" ? "페이지" : "장면";
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: "end" });
@@ -93,9 +100,9 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
               <Sparkles className="size-6" />
             </div>
             <h3 className="font-serif text-[20px] font-semibold">무엇이든 물어보세요</h3>
-            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">강의 전체 내용을 알고 있는 튜터예요. 답변 속 시간을 누르면 그 장면으로 이동합니다.</p>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">{unit === "page" ? "자료 전체 내용을 알고 있는 튜터예요. 답변 속 쪽 번호를 누르면 그 페이지가 열립니다." : "강의 전체 내용을 알고 있는 튜터예요. 답변 속 시간을 누르면 그 장면으로 이동합니다."}</p>
             <div className="mt-6 grid gap-2 sm:grid-cols-2">
-              {SUGGESTIONS.map((s) => (
+              {(unit === "page" ? DOC_SUGGESTIONS : SUGGESTIONS).map((s) => (
                 <button key={s} onClick={() => send(s)} className="rounded-xl border border-border bg-surface px-3.5 py-3 text-left text-[13px] leading-snug transition-colors hover:border-accent hover:text-accent">
                   {s}
                 </button>
@@ -104,11 +111,11 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
                 onClick={() => {
                   setAnchor(second);
                   setAnchorOn(true);
-                  send(`지금 보고 있는 [${fmtTime(second)}] 장면의 내용을 설명해 줘`);
+                  send(`지금 보고 있는 [${player.fmt(second)}] ${spot}의 내용을 설명해 줘`);
                 }}
                 className="rounded-xl border border-dashed border-accent/50 bg-accent-soft px-3.5 py-3 text-left text-[13px] leading-snug text-accent sm:col-span-2"
               >
-                지금 보는 장면 ({fmtTime(second)}) 설명해 줘
+                지금 보는 {spot} ({player.fmt(second)}) 설명해 줘
               </button>
             </div>
           </div>
@@ -120,7 +127,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
                   <div className="max-w-[85%] rounded-2xl rounded-br-md bg-accent px-4 py-2.5 text-[14px] leading-relaxed whitespace-pre-wrap text-accent-fg">
                     {m.anchor !== null && m.anchor !== undefined ? (
                       <button onClick={() => player.seek(m.anchor!)} className="mb-1 flex items-center gap-1 text-[11.5px] font-semibold opacity-80 hover:opacity-100">
-                        <Clock className="size-3" /> {fmtTime(m.anchor)} 장면
+                        <Clock className="size-3" /> {player.fmt(m.anchor)} {spot}
                       </button>
                     ) : null}
                     {m.content}
@@ -192,7 +199,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
                 send();
               }
             }}
-            placeholder="강의에 대해 질문하기…  (Shift+Enter 줄바꿈)"
+            placeholder={`${unit === "page" ? "자료" : "강의"}에 대해 질문하기…  (Shift+Enter 줄바꿈)`}
             className="block max-h-[200px] w-full resize-none bg-transparent px-2 py-1.5 text-[14px] leading-relaxed outline-none placeholder:text-faint"
           />
           <div className="mt-1 flex items-center gap-1.5">
@@ -207,7 +214,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
               )}
             >
               <Clock className="size-3.5" />
-              {anchorOn ? `${fmtTime(anchor ?? second)} 장면 기준` : "현재 장면 기준"}
+              {anchorOn ? `${player.fmt(anchor ?? second)} ${spot} 기준` : `현재 ${spot} 기준`}
             </button>
             <div className="flex-1" />
             {history.length > 0 && !streaming ? (

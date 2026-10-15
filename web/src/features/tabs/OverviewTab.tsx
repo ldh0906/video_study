@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { AlertTriangle, ChevronRight, Clock, Compass, GraduationCap, Lightbulb, Search, Target } from "lucide-react";
-import { fmtDuration, fmtTime } from "@shared/time";
+import { AlertTriangle, ChevronRight, Clock, Compass, GraduationCap, Lightbulb, Search, Target, Star } from "lucide-react";
+import { fmtDuration } from "@shared/time";
 import type { Analysis, Lecture } from "@shared/types";
 import { Markdown, TimeChip } from "@/components/Markdown";
 import { Badge, Input } from "@/components/ui";
@@ -51,7 +51,7 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-[12.5px] text-muted">
         <span className="flex items-center gap-1.5">
           <Clock className="size-3.5" />
-          {fmtDuration(lecture.durationSec)}
+          {lecture.kind === "doc" ? `${lecture.pageCount ?? "?"}쪽` : fmtDuration(lecture.durationSec)}
         </span>
         <Difficulty level={o.difficulty} />
         <span>{o.chapters.length}개 챕터</span>
@@ -79,7 +79,20 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
         </Section>
       ) : null}
 
-      <Section icon={<Compass />} title="강의 흐름">
+      {o.emphasis?.length ? (
+        <Section icon={<Star />} title={lecture.docType === "assignment" || lecture.docType === "lab" ? "해야 할 것과 요구사항" : "중요 표시 · 시험 단서"}>
+          <ul className="space-y-2">
+            {o.emphasis.map((x, i) => (
+              <li key={i} className="flex gap-2 rounded-xl border border-accent/25 bg-accent-soft/50 px-3.5 py-2.5 text-[13.5px] leading-relaxed">
+                <TimeChip time={x.time} className="shrink-0" />
+                <Markdown className="min-w-0 flex-1 text-[13.5px]">{x.text}</Markdown>
+              </li>
+            ))}
+          </ul>
+        </Section>
+      ) : null}
+
+      <Section icon={<Compass />} title={lecture.kind === "doc" ? "자료 구성" : "강의 흐름"}>
         <ol className="relative ml-[7px] border-l border-border">
           {o.chapters.map((c, i) => {
             const active = second >= c.start && second < c.end;
@@ -88,7 +101,7 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
                 <span className={cn("absolute top-[7px] -left-[5px] size-[9px] rounded-full border-2 border-bg", active ? "bg-accent ring-4 ring-accent-soft" : "bg-border-strong")} />
                 <button onClick={() => player.seek(c.start)} className="group text-left">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-[12px] font-semibold text-accent tabular-nums">{fmtTime(c.start)}</span>
+                    <span className="text-[12px] font-semibold text-accent tabular-nums">{player.fmt(c.start)}</span>
                     <span className="text-[15px] font-semibold group-hover:text-accent">{c.title}</span>
                   </div>
                   <p className="mt-1 text-[13.5px] leading-relaxed text-muted">{c.summary}</p>
@@ -128,7 +141,7 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
 
       {o.issues?.length ? (
         <Section icon={<AlertTriangle />} title="확인이 필요한 부분">
-          <p className="mb-3 text-[13px] leading-relaxed text-muted">음성 인식이 불분명했거나 AI가 강의 내용을 바로잡은 곳이에요. 해당 장면이나 교재로 한 번 확인해 보세요.</p>
+          <p className="mb-3 text-[13px] leading-relaxed text-muted">{lecture.kind === "doc" ? "텍스트 추출이 불분명했거나 AI가 내용을 바로잡은 곳이에요. 해당 페이지에서 한 번 확인해 보세요." : "음성 인식이 불분명했거나 AI가 강의 내용을 바로잡은 곳이에요. 해당 장면이나 교재로 한 번 확인해 보세요."}</p>
           <ul className="space-y-2">
             {o.issues.map((x, i) => (
               <li key={i} className="flex gap-2 rounded-xl border border-warning/30 bg-warning-soft/40 px-3.5 py-2.5 text-[13.5px] leading-relaxed">
@@ -165,7 +178,7 @@ export function OverviewTab({ lecture, analysis }: { lecture: Lecture; analysis:
               <button key={g.term} onClick={() => setOpenTerm(openTerm === g.term ? null : g.term)} className="block w-full px-4 py-3 text-left hover:bg-surface-2/60">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-[14px] font-semibold">{g.term}</span>
-                  <span className="text-[11.5px] text-faint tabular-nums">{fmtTime(g.time)}</span>
+                  <span className="text-[11.5px] text-faint tabular-nums">{player.fmt(g.time)}</span>
                 </div>
                 <div className={cn("mt-1 text-[13.5px] leading-relaxed text-muted", openTerm !== g.term && "line-clamp-1")}>{g.definition}</div>
                 {openTerm === g.term ? (

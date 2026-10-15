@@ -9,10 +9,17 @@ test("multiple files append, duplicates are skipped, subtitles match regardless 
   const first = addImportFiles([], [file("강의 1.srt"), file("강의 2.mp4"), file("강의 1.mp4"), file("강의 2.vtt")]);
   assert.equal(first.items.length, 2);
   assert.deepEqual(first.items.map((item) => item.subtitle?.name), ["강의 2.vtt", "강의 1.srt"]);
-  const next = addImportFiles(first.items, [file("강의 1.mp4"), file("강의 3.mkv"), file("notes.pdf")]);
-  assert.equal(next.items.length, 3);
-  assert.deepEqual(next.rejected, ["notes.pdf"]);
+  const next = addImportFiles(first.items, [file("강의 1.mp4"), file("강의 3.mkv"), file("notes.pdf"), file("notes.docx")]);
+  assert.equal(next.items.length, 4);
+  assert.deepEqual(next.rejected, ["notes.docx"]);
   assert.deepEqual(first.unmatched, []);
+});
+
+test("PDFs import as their own items and never take a subtitle", () => {
+  const result = addImportFiles([], [file("3주차.pdf"), file("3주차.mp4"), file("3주차.srt")]);
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items.find((item) => item.file.name.endsWith(".pdf"))?.subtitle, undefined);
+  assert.equal(result.items.find((item) => item.file.name.endsWith(".mp4"))?.subtitle?.name, "3주차.srt");
 });
 
 test("one video accepts differently named subtitles; ambiguous matches require manual attachment", () => {

@@ -1,5 +1,5 @@
 import { motion } from "motion/react";
-import { AlertTriangle, AudioLines, Brain, Check, Download, Film, Layers, Mic, Pause, Play, RotateCcw, Settings2, Sparkles } from "lucide-react";
+import { AlertTriangle, AudioLines, Blocks, Brain, Check, Download, FileSearch, Film, Layers, Mic, Pause, Play, RotateCcw, Settings2, Sparkles } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import type { Lecture, StepId } from "@shared/types";
@@ -17,6 +17,8 @@ const STEPS: Record<StepId, { label: string; icon: React.ReactNode; hint: string
   analyze: { label: "파트별 심층 분석", icon: <Brain />, hint: "노트, 개념, 어려운 부분, 카드를 만듭니다" },
   synthesize: { label: "전체 구조 정리", icon: <Sparkles />, hint: "챕터, 요약, 용어집, 마인드맵을 만듭니다" },
   materials: { label: "학습 자료", icon: <Layers />, hint: "플래시카드와 퀴즈를 준비합니다" },
+  extract: { label: "PDF 읽기", icon: <FileSearch />, hint: "페이지별 글자와 목차를 읽고, 그림이 있는 페이지를 찾습니다" },
+  pages: { label: "인터랙티브 학습 페이지", icon: <Blocks />, hint: "챕터마다 직접 만져 보며 이해하는 페이지를 만듭니다" },
 };
 
 function elapsed(ms: number) {
@@ -50,7 +52,7 @@ export function ProcessingPanel({ lecture, busy }: { lecture: Lecture; busy: boo
     <div className="mx-auto w-full max-w-[520px] px-2 py-6">
       <div className="mb-7">
         <div className="mb-1 text-[13px] font-medium text-accent">
-          {failed ? "문제가 생겼어요" : stopped ? "잠시 멈춤" : lecture.status === "queued" ? "차례를 기다리는 중" : "강의를 분석하고 있어요"}
+          {failed ? "문제가 생겼어요" : stopped ? "잠시 멈춤" : lecture.status === "queued" ? "차례를 기다리는 중" : lecture.kind === "doc" ? "자료를 분석하고 있어요" : "강의를 분석하고 있어요"}
         </div>
         <h2 className="font-serif text-[24px] leading-snug font-semibold tracking-tight">
           {failed ? "분석을 마치지 못했습니다" : stopped ? "이어서 분석할 수 있어요" : "공부할 준비를 하는 중…"}

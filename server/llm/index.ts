@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { currentChoice } from "../../shared/catalog";
 import type { ModelChoice } from "../../shared/types";
 import { getSettings } from "../settings";
 import { anthropicGenerate } from "./anthropic";
@@ -51,6 +52,8 @@ export class LLMError extends Error {
 }
 
 export function generateText(opts: GenerateOptions): Promise<GenerateResult> {
+  // a lecture analyzed long ago may name a model the provider has retired
+  opts = { ...opts, choice: currentChoice(opts.choice) };
   const viaCli = getSettings().connection[opts.choice.provider] === "cli";
   if (opts.choice.provider === "openai") return viaCli ? codexCliGenerate(opts) : openaiGenerate(opts);
   return viaCli ? claudeCliGenerate(opts) : anthropicGenerate(opts);

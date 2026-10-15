@@ -15,6 +15,7 @@ export interface ImportItem {
 }
 
 export const isSubtitle = (file: File) => /\.(srt|vtt)$/i.test(file.name);
+export const isPdf = (file: File) => file.type === "application/pdf" || /\.pdf$/i.test(file.name);
 const stem = (name: string) => name.replace(/\.[^.]+$/, "").normalize("NFC").toLowerCase();
 const fileKey = (file: File) => JSON.stringify([file.name, file.size, file.lastModified]);
 
@@ -27,7 +28,7 @@ export function addImportFiles(existing: ImportItem[], files: File[]) {
   for (const file of files) {
     if (isSubtitle(file)) {
       subtitles.push(file);
-    } else if (/^(video|audio)\//i.test(file.type) || /\.(mp4|mkv|mov|webm|avi|m4v|mpeg|mpg|wmv|ts|mts|m2ts|ogv|3gp|mp3|m4a|flac|wav|ogg|opus|aac|aiff|wma)$/i.test(file.name)) {
+    } else if (isPdf(file) || /^(video|audio)\//i.test(file.type) || /\.(mp4|mkv|mov|webm|avi|m4v|mpeg|mpg|wmv|ts|mts|m2ts|ogv|3gp|mp3|m4a|flac|wav|ogg|opus|aac|aiff|wma)$/i.test(file.name)) {
       if (!keys.has(fileKey(file))) {
         keys.add(fileKey(file));
         items.push({ id: crypto.randomUUID(), file, status: "pending", progress: 0 });
@@ -36,8 +37,9 @@ export function addImportFiles(existing: ImportItem[], files: File[]) {
   }
   const unmatched: string[] = [];
   for (const subtitle of subtitles) {
-    const candidates = items.filter((item) => item.status !== "done" && !item.subtitle && stem(item.file.name) === stem(subtitle.name));
-    const target = candidates.length === 1 ? candidates[0] : items.length === 1 && items[0].status !== "done" && !items[0].subtitle && subtitles.length === 1 ? items[0] : undefined;
+    const media = items.filter((item) => !isPdf(item.file));
+    const candidates = media.filter((item) => item.status !== "done" && !item.subtitle && stem(item.file.name) === stem(subtitle.name));
+    const target = candidates.length === 1 ? candidates[0] : media.length === 1 && media[0].status !== "done" && !media[0].subtitle && subtitles.length === 1 ? media[0] : undefined;
     if (target) target.subtitle = subtitle;
     else unmatched.push(subtitle.name);
   }
