@@ -34,9 +34,19 @@ export const player = {
     sync();
   },
   /** A PDF viewer takes the player's place: `goto` scrolls it to a page. */
-  attachPages(pageCount: number, goto: ((page: number) => void) | null) {
+  attachPages(pageCount: number, goto: (page: number) => void) {
     pager = goto;
-    emit({ unit: "page", duration: pageCount, time: state.unit === "page" ? state.time : 1, playing: false });
+    emit({ unit: "page", duration: pageCount, time: 1, playing: false });
+  },
+  detachPages(goto: (page: number) => void) {
+    // a newer viewer may already have attached
+    if (pager !== goto) return;
+    pager = null;
+    emit({ duration: 0, time: 1 });
+  },
+  /** whether a PDF viewer is mounted and can take a seek */
+  get pagesReady() {
+    return pager !== null;
   },
   /** the viewer reports the page on screen */
   setPage(page: number) {

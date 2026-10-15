@@ -60,3 +60,13 @@ export function throttle<A extends unknown[]>(fn: (...args: A) => void, ms: numb
 }
 
 export const estimateTokens = (text: string) => Math.ceil(text.length / 2.6);
+
+/** Fisher-Yates; models put the key in the first slots far more often than chance. */
+export function shuffleOptions(options: string[], answerIndex: number, random = Math.random) {
+  const order = options.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return { options: order.map((i) => options[i]), answerIndex: order.indexOf(answerIndex) };
+}

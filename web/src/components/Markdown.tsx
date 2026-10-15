@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
  * Where anchors point when there is no player on the page (an exam built from
  * several sources): each question names its own source and how to open it.
  */
-const AnchorTarget = createContext<{ unit: AnchorUnit; seek: (value: number) => void } | null>(null);
+const AnchorTarget = createContext<{ unit: AnchorUnit; seek: (value: number) => void; plain?: boolean } | null>(null);
 export const AnchorProvider = AnchorTarget.Provider;
 
 /** A clickable source anchor: plays the video there, or opens the PDF at that page. */
@@ -25,6 +25,8 @@ export function TimeChip({ time, className, children }: { time: number; classNam
   const unit = target?.unit ?? playerUnit;
   // generic labels like "관련 장면" read better as the page itself
   const label = unit === "page" && (children === undefined || typeof children === "string") ? fmtAnchor(unit, time) : (children ?? fmtAnchor(unit, time));
+  // e.g. during an exam: showing where the answer is would give it away
+  if (target?.plain) return <span className={cn("mx-0.5 text-[0.85em] text-faint tabular-nums", className)}>{label}</span>;
   return (
     <button
       type="button"

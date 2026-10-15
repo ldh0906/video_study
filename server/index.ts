@@ -22,8 +22,9 @@ import { getSettings, publicSettings, saveSettings } from "./settings";
 import { deleteLecture, docs, freshSteps, getLecture, listFolders, listLectures, newId, saveFolders, saveLecture, updateLecture } from "./store";
 import { chat, generateMoreCards, generateQuiz, gradeAnswer, newCard, startMaterial } from "./study";
 import { startStudyPage } from "./studypages";
-import { createExam, deleteExam, getExam, listExams, saveAnswers, startAttempt, submitAttempt } from "./exam";
+import { createExam, deleteExam, getExam, listExams, recoverExams, saveAnswers, startAttempt, submitAttempt, unfileExams } from "./exam";
 import { DOC_TYPES } from "./prompts-doc";
+import { unitOf } from "../shared/anchor";
 import { FFMPEG, ffmpegVersion } from "./tools/ffmpeg";
 import { installYtdlp, resolveYtdlp } from "./tools/ytdlp";
 import { WHISPER_MODELS, downloads, installModel, installWhisper, resolveWhisper, whisperStatus } from "./tools/whisper";
@@ -34,6 +35,26 @@ const UPLOADS = path.join(DATA_DIR, "uploads");
 fs.mkdirSync(UPLOADS, { recursive: true });
 
 const app = new Hono();
+
+/**
+ * The API acts on local files and the signed-in AI accounts, so only pages
+ * served from this machine may call it: a foreign Host header means DNS
+ * rebinding, a foreign Origin means another website (simple POSTs skip CORS).
+ */
+const LOCAL_HOST = /^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/i;
+app.use("*", async (c, next) => {
+  const host = c.req.header("host") ?? "";
+  const origin = c.req.header("origin");
+  if (!LOCAL_HOST.test(host)) return c.text("forbidden host", 403);
+  if (origin && origin !== "null") {
+    let ok = false;
+    try {
+      ok = LOCAL_HOST.test(new URL(origin).host);
+    } catch {}
+    if (!ok) return c.json({ error: "다른 사이트에서 온 요청은 받지 않습니다." }, 403);
+  }
+  await next();
+});
 
 app.onError((err, c) => {
   console.error(err);
@@ -164,7 +185,7 @@ app.get("/api/review", (c) => {
   const folder = c.req.query("folder");
   const items = listLectures()
     .filter((l) => !folder || l.folderId === folder)
-    .flatMap((l) => docs.flashcards.get(l.id).map((card) => ({ lectureId: l.id, lectureTitle: l.title, card })));
+    .flatMap((l) => docs.flashcards.get(l.id).map((card) => ({ lectureId: l.id, lectureTitle: l.title, unit: unitOf(l), card })));
   return c.json(items);
 });
 
@@ -311,6 +332,7 @@ app.delete("/api/folders/:id", (c) => {
   const id = c.req.param("id");
   saveFolders(listFolders().filter((f) => f.id !== id));
   for (const l of listLectures()) if (l.folderId === id) updateLecture(l.id, (x) => (x.folderId = undefined));
+  unfileExams(id);
   return c.json({ ok: true });
 });
 
@@ -388,7 +410,21 @@ app.get("/api/lectures/:id/analysis", (c) => c.json(docs.analysis.get(c.req.para
 app.get("/api/lectures/:id/pdf", (c) => {
   const l = must(c.req.param("id"));
   if (l.kind !== "doc" || !l.mediaPath || !fs.existsSync(l.mediaPath)) return c.json({ error: "PDF가 없습니다." }, 404);
-  return c.body(fs.readFileSync(l.mediaPath), 200, { "Content-Type": "application/pdf", "Cache-Control": "no-cache" });
+  // streamed, with ranges: a textbook can be hundreds of MB
+  const size = fs.statSync(l.mediaPath).size;
+  const m = c.req.header("range")?.match(/bytes=(\d*)-(\d*)/);
+  if (m) {
+    const start = m[1] ? Number(m[1]) : 0;
+    const end = m[2] ? Math.min(Number(m[2]), size - 1) : size - 1;
+    if (start >= size) return c.body(null, 416, { "Content-Range": `bytes */${size}` });
+    return c.body(Readable.toWeb(fs.createReadStream(l.mediaPath, { start, end })) as ReadableStream, 206, {
+      "Content-Type": "application/pdf",
+      "Content-Range": `bytes ${start}-${end}/${size}`,
+      "Accept-Ranges": "bytes",
+      "Content-Length": String(end - start + 1),
+    });
+  }
+  return c.body(Readable.toWeb(fs.createReadStream(l.mediaPath)) as ReadableStream, 200, { "Content-Type": "application/pdf", "Content-Length": String(size), "Accept-Ranges": "bytes", "Cache-Control": "no-cache" });
 });
 
 // --- interactive study pages ---------------------------------------------------------
@@ -397,9 +433,12 @@ app.get("/api/lectures/:id/pages", (c) => c.json(docs.studyPages.get(must(c.req.
 
 app.post("/api/lectures/:id/pages", async (c) => {
   const l = must(c.req.param("id"));
-  const { chapter, prompt } = (await c.req.json()) as { chapter: number; prompt?: string };
+  const body = (await c.req.json()) as { chapter: number; prompt?: string };
+  const chapter = Number(body.chapter);
+  const chapters = docs.analysis.get(l.id)?.overview.chapters.length ?? 0;
+  if (!Number.isInteger(chapter) || chapter < 0 || chapter >= chapters) return c.json({ error: "챕터를 찾을 수 없습니다. 화면을 새로 고쳐 주세요." }, 400);
   if (docs.studyPages.get(l.id).some((p) => p.chapter === chapter && p.status === "generating")) return c.json({ error: "이 챕터의 페이지를 이미 만들고 있어요." }, 409);
-  return c.json(startStudyPage(l, Number(chapter), (prompt ?? "").slice(0, 1000)));
+  return c.json(startStudyPage(l, chapter, (body.prompt ?? "").slice(0, 1000)));
 });
 
 app.delete("/api/lectures/:id/pages/:pid", (c) => {
@@ -791,6 +830,7 @@ app.get("*", (c) => {
 });
 
 recoverOnBoot();
+recoverExams();
 serve({ fetch: app.fetch, port, hostname: "127.0.0.1" }, () => {
   console.log(`\n  Lecture Lens API  →  http://localhost:${port}\n`);
 });

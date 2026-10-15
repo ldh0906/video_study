@@ -53,3 +53,22 @@ test("saved model choices move to the current generation, retired ones always", 
   assert.equal(currentChoice({ provider: "anthropic", model: "claude-haiku-4-5", effort: "none" }).effort, "medium");
   assert.match(CATALOG_VERSION, /^\d{4}-\d{2}$/);
 });
+
+test("exam points always add up to exactly 100", async () => {
+  const { apportion } = await import("../server/exam");
+  for (const n of [1, 6, 30, 40, 50]) {
+    const pts = apportion(Array.from({ length: n }, (_, i) => 3 + (i % 4)), 100);
+    assert.equal(pts.reduce((a, b) => a + b, 0), 100, `n=${n}`);
+    assert.ok(pts.every((p) => p >= 1));
+  }
+  // equal weights stay equal up to one point
+  const eq = apportion(Array(40).fill(5), 100);
+  assert.ok(Math.max(...eq) - Math.min(...eq) <= 1);
+});
+
+test("scanned pages cut parts small enough that every page is seen", () => {
+  const scans = Array.from({ length: 30 }, (_, i) => ({ page: i + 1, text: "", images: 1, paths: 0 }));
+  const ranges = buildDocSections(scans, []);
+  assert.ok(ranges.every((r) => r.end - r.start <= 8), JSON.stringify(ranges));
+  assert.equal(ranges.at(-1)!.end, 31);
+});

@@ -1,4 +1,5 @@
 import { StrictMode } from "react";
+import { useParams } from "react-router";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -10,6 +11,12 @@ import { LectureView } from "./pages/LectureView";
 import { ReviewPage } from "./pages/Review";
 import { ExamPage } from "./pages/Exam";
 import "./index.css";
+
+/** Keyed by id, so moving from one item to another starts a fresh view (and a fresh viewer). */
+function LectureRoute() {
+  const { id } = useParams();
+  return <LectureView key={id} />;
+}
 
 const queryClient = new QueryClient({
   defaultOptions: { queries: { refetchOnWindowFocus: false, retry: 1 } },
@@ -28,7 +35,7 @@ const router = createBrowserRouter([
           </div>
         ),
       },
-      { path: "/lecture/:id", element: <LectureView /> },
+      { path: "/lecture/:id", element: <LectureRoute /> },
       {
         path: "/exam/:id",
         element: (

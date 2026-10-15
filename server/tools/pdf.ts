@@ -42,13 +42,54 @@ export interface PdfInfo {
   pages: PdfPage[];
 }
 
-/** Open a PDF; call `close` when done (it ends pdf.js's worker for this document). */
+/**
+ * Open a PDF, sharing one parsed document between callers: analysis renders
+ * pages part by part, and re-reading a large book for every part is waste.
+ * The document closes a little after its last user is done.
+ */
+const openDocs = new Map<string, { doc: Promise<PdfDocument>; task: LoadingTask; users: number; timer?: NodeJS.Timeout }>();
+
 async function open(file: string): Promise<{ doc: PdfDocument; close: () => Promise<void> }> {
-  const { getDocument } = await pdfjs();
-  const data = new Uint8Array(fs.readFileSync(file));
-  const task: LoadingTask = getDocument({ data, cMapUrl: CMAPS, cMapPacked: true, standardFontDataUrl: FONTS, verbosity: 0 });
-  return { doc: await task.promise, close: () => task.destroy() };
+  const key = path.resolve(file);
+  let entry = openDocs.get(key);
+  if (!entry) {
+    const { getDocument } = await pdfjs();
+    entry = openDocs.get(key);
+    if (!entry) {
+      const data = new Uint8Array(fs.readFileSync(file));
+      const task: LoadingTask = getDocument({ data, cMapUrl: CMAPS, cMapPacked: true, standardFontDataUrl: FONTS, verbosity: 0 });
+      entry = { doc: task.promise, task, users: 0 };
+      openDocs.set(key, entry);
+    }
+  }
+  const e = entry;
+  clearTimeout(e.timer);
+  e.users++;
+  let doc: PdfDocument;
+  try {
+    doc = await e.doc;
+  } catch (err) {
+    openDocs.delete(key);
+    throw err;
+  }
+  let closed = false;
+  return {
+    doc,
+    close: async () => {
+      if (closed) return;
+      closed = true;
+      if (--e.users > 0) return;
+      e.timer = setTimeout(() => {
+        if (e.users > 0) return;
+        openDocs.delete(key);
+        void e.task.destroy();
+      }, 20_000);
+    },
+  };
 }
+
+/** pdf.js runs on the server's thread in Node: give other requests a turn between pages. */
+const breathe = () => new Promise((r) => setImmediate(r));
 
 /** Text items joined in reading order; pdf.js marks line ends with hasEOL. */
 function pageText(items: { str?: string; hasEOL?: boolean }[]) {
@@ -102,6 +143,7 @@ export async function readPdf(file: string, onProgress: (p: number) => void, sig
       const paths = ops ? ops.fnArray.filter((f) => f === OPS.constructPath).length : 0;
       pages.push({ page: n, text: pageText(content.items as { str?: string; hasEOL?: boolean }[]), images, paths });
       page.cleanup();
+      await breathe();
       if (n % 5 === 0 || n === doc.numPages) onProgress(n / doc.numPages);
     }
     const title = String((meta?.info as { Title?: string } | undefined)?.Title ?? "").trim();
@@ -135,6 +177,7 @@ export async function renderPages(file: string, pageNumbers: number[], dir: stri
       await page.render({ canvas: canvas as unknown as HTMLCanvasElement, canvasContext: context as CanvasRenderingContext2D, viewport }).promise;
       fs.writeFileSync(pageImage(dir, n), canvas.toBuffer("image/jpeg", 82));
       page.cleanup();
+      await breathe();
     }
   } finally {
     await close();
@@ -142,6 +185,11 @@ export async function renderPages(file: string, pageNumbers: number[], dir: stri
 }
 
 export const pageImage = (dir: string, page: number) => path.join(dir, `p${page}.jpg`);
+
+/** A page whose content exists only as pixels (a scan, a photo of notes). */
+export function isImageOnly(p: PdfPage) {
+  return p.text.replace(/\s/g, "").length < 40;
+}
 
 /** Pages worth showing the model as images: figures, diagrams, or too little text to stand alone. */
 export function isVisualPage(p: PdfPage) {

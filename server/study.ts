@@ -4,9 +4,9 @@ import { generateObject, generateText, type LLMUsage } from "./llm";
 import { CardsSchema, GradeSchema, MATERIAL_PRESETS, QuizSchema, cardsSystem, chatSystem, materialSystem, quizSystem } from "./prompts";
 import { fixStrings, timestampFixer } from "./pipeline/timestamps";
 import { getSettings } from "./settings";
-import { docs, newId, updateLecture } from "./store";
+import { docs, getLecture, newId, updateLecture } from "./store";
 import { formatTranscript } from "./pipeline/analyze";
-import { estimateTokens, mapLimit, throttle } from "./pipeline/util";
+import { estimateTokens, mapLimit, shuffleOptions, throttle } from "./pipeline/util";
 import { pageFixer } from "./pipeline/doc";
 
 /** Fix the anchors a model wrote: snap timestamps to transcript lines, or drop pages that don't exist. */
@@ -22,6 +22,8 @@ export function formatSource(segments: Segment[], unit: AnchorUnit) {
 }
 
 export function addUsage(id: string, u: LLMUsage) {
+  // the item may have been deleted while its request ran
+  if (!getLecture(id)) return;
   updateLecture(id, (l) => {
     l.usage.inputTokens += u.input;
     l.usage.outputTokens += u.output;
@@ -151,12 +153,13 @@ export async function generateQuiz(
 
   const questions: QuizQuestion[] = fixStrings(results.flat(), anchorFixer(lecture)).map((q) => {
     const isMcq = q.type === "mcq" && q.options.length >= 2 && q.answerIndex >= 0 && q.answerIndex < q.options.length;
+    const mixed = isMcq ? shuffleOptions(q.options, q.answerIndex) : { options: [], answerIndex: -1 };
     return {
       id: newId(),
       type: isMcq ? "mcq" : "short",
       question: q.question,
-      options: isMcq ? q.options : [],
-      answerIndex: isMcq ? q.answerIndex : -1,
+      options: mixed.options,
+      answerIndex: mixed.answerIndex,
       answer: isMcq ? q.options[q.answerIndex] : q.answer,
       explanation: q.explanation,
       time: q.time ?? null,

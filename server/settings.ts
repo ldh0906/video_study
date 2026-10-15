@@ -36,7 +36,7 @@ export function getSettings(): Settings {
 }
 
 export function saveSettings(patch: Partial<Settings>): Settings {
-  const next = { ...getSettings(), ...patch };
+  const next = { ...getSettings(), ...patch, catalogVersion: CATALOG_VERSION };
   writeJson(FILE, next);
   return next;
 }

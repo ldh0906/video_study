@@ -15,7 +15,7 @@ import {
   docOutlineSystem,
   docOverviewSystem,
 } from "../prompts-doc";
-import { isVisualPage, pageImage, readPdf, renderPages, type PdfInfo, type PdfPage } from "../tools/pdf";
+import { isImageOnly, isVisualPage, pageImage, readPdf, renderPages, type PdfInfo, type PdfPage } from "../tools/pdf";
 import { fixStrings } from "./timestamps";
 import { estimateTokens, mapLimit } from "./util";
 
@@ -73,6 +73,10 @@ export interface PageRange {
 
 const PART_TOKENS = 6500;
 const PART_PAGES = 24;
+/** a scanned page is all image: at most this many per part, so each one reaches the model */
+const SCANNED_PER_PART = 8;
+
+const pageCost = (p: PdfPage) => (isImageOnly(p) ? Math.ceil(PART_TOKENS / SCANNED_PER_PART) : estimateTokens(p.text) + 120);
 
 /** Split pages into study-sized parts, preferring to cut where a topic starts. */
 export function buildDocSections(pages: PdfPage[], topicStarts: number[]): PageRange[] {
@@ -81,7 +85,7 @@ export function buildDocSections(pages: PdfPage[], topicStarts: number[]): PageR
   let first = 0;
   let tokens = 0;
   for (let i = 0; i < pages.length; i++) {
-    const t = estimateTokens(pages[i].text) + 120;
+    const t = pageCost(pages[i]);
     const count = i - first;
     const full = count > 0 && (tokens + t > PART_TOKENS || count >= PART_PAGES);
     const goodCut = count > 0 && starts.has(pages[i].page) && (tokens > PART_TOKENS * 0.5 || count >= PART_PAGES / 2);
@@ -96,7 +100,7 @@ export function buildDocSections(pages: PdfPage[], topicStarts: number[]): PageR
   // a tiny tail joins the part before it
   if (ranges.length > 1) {
     const last = ranges.at(-1)!;
-    const tail = pages.filter((p) => p.page >= last.start).reduce((n, p) => n + estimateTokens(p.text), 0);
+    const tail = pages.filter((p) => p.page >= last.start).reduce((n, p) => n + pageCost(p), 0);
     const prev = ranges.at(-2)!;
     if (tail < PART_TOKENS * 0.25 && last.end - last.start < 4 && last.end - prev.start <= PART_PAGES) {
       ranges.pop();
@@ -115,12 +119,25 @@ function outlineInput(info: PdfInfo) {
   return info.pages.map((p) => `<page n="${p.page}">\n${p.text.slice(0, 350)}\n</page>`).join("\n");
 }
 
+/** Up to 12 scanned pages spread over the document, so the outline pass can read a scan at all. */
+async function outlineImages(lecture: Lecture, info: PdfInfo, signal: AbortSignal): Promise<LLMImage[]> {
+  const scanned = info.pages.filter(isImageOnly).map((p) => p.page);
+  if (scanned.length < info.pages.length / 2) return [];
+  const step = scanned.length / Math.min(12, scanned.length);
+  const pick = Array.from({ length: Math.min(12, scanned.length) }, (_, k) => scanned[Math.floor(k * step)]);
+  await renderPages(lecture.mediaPath!, pick, pageImagesDir(lecture.id), 1400, signal);
+  return pick
+    .filter((n) => fs.existsSync(pageImage(pageImagesDir(lecture.id), n)))
+    .map((n) => ({ mime: "image/jpeg" as const, data: fs.readFileSync(pageImage(pageImagesDir(lecture.id), n)).toString("base64"), caption: `Page ${n}:` }));
+}
+
 export async function buildDocOutline(lecture: Lecture, info: PdfInfo, signal: AbortSignal, onUsage: (u: LLMUsage) => void): Promise<DocOutline> {
   const file = lectureDir(lecture.id, "outline.json");
   const system = docOutlineSystem(lecture.options.outputLanguage);
   const key = hash({ v: 1, system, schema: strictJsonSchema(DocOutlineSchema), model: lecture.options.analysis, pages: info.pages.map((p) => p.text), outline: info.outline, focus: lecture.options.focus });
   const cached = readJson<{ key: string; outline: DocOutline } | null>(file, null);
   if (cached?.key === key) return cached.outline;
+  const images = await outlineImages(lecture, info, signal);
   const bookmarks = info.outline.length ? `<bookmarks>\n${info.outline.map((b) => `${"  ".repeat(b.level)}- p.${b.page} ${b.title}`).join("\n")}\n</bookmarks>` : "";
   const { object, usage } = await generateObject({
     choice: lecture.options.analysis,
@@ -133,10 +150,12 @@ export async function buildDocOutline(lecture: Lecture, info: PdfInfo, signal: A
           bookmarks,
           `Document: ${lecture.title} (${info.pageCount} pages)`,
           lecture.options.focus ? `Note from the student: ${lecture.options.focus}` : "",
+          images.length ? `Most pages are scanned images without a text layer; images of ${images.length} of them are attached, in page order.` : "",
           "Classify this document and list its topic sequence and the concepts it introduces, with page numbers.",
         ]
           .filter(Boolean)
           .join("\n\n"),
+        images,
       },
     ],
     schema: DocOutlineSchema,
@@ -187,12 +206,17 @@ function unwrapFence(text: string) {
   return (m ? m[1] : text).trim();
 }
 
-/** Visual pages of a part, spread evenly when there are more than the cap. */
+/**
+ * Pages of a part to show as images: every image-only page (its content
+ * exists nowhere else), then other visual pages spread evenly up to the cap.
+ */
 function pickImagePages(pages: PdfPage[], max: number) {
-  const visual = pages.filter(isVisualPage).map((p) => p.page);
-  if (visual.length <= max) return visual;
-  const step = visual.length / max;
-  return Array.from({ length: max }, (_, k) => visual[Math.floor(k * step + step / 2)]);
+  const scanned = pages.filter(isImageOnly).map((p) => p.page);
+  const visual = pages.filter((p) => isVisualPage(p) && !isImageOnly(p)).map((p) => p.page);
+  const room = Math.max(0, max - scanned.length);
+  const step = visual.length / Math.max(1, room);
+  const extra = visual.length <= room ? visual : Array.from({ length: room }, (_, k) => visual[Math.floor(k * step + step / 2)]);
+  return [...scanned, ...extra].sort((a, b) => a - b);
 }
 
 export async function analyzeDocSections(ctx: Ctx, ranges: PageRange[]): Promise<SectionAnalysis[]> {

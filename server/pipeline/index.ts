@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import type { Lecture, Segment, Step, StepId } from "../../shared/types";
 import { lectureDir } from "../paths";
 import { apiKey, getSettings } from "../settings";
@@ -12,7 +14,7 @@ import { installedModels, resolveWhisper } from "../tools/whisper";
 import { analyzeSections, buildOutline, buildSections, synthesize } from "./analyze";
 import { analyzeDocSections, buildDocOutline, buildDocSections, extractDoc, pageImagesDir, pagesAsSegments, synthesizeDoc } from "./doc";
 import { pageImage, renderPages } from "../tools/pdf";
-import { autoStudyPages } from "../studypages";
+import { autoStudyPages, recoverStudyPages } from "../studypages";
 import { transcribeAudio } from "./transcribe";
 import { throttle } from "./util";
 
@@ -89,7 +91,10 @@ export function isBusy(id: string) {
 
 /** After a restart, anything that was mid-flight is marked interrupted; the user can resume it. */
 export function recoverOnBoot() {
+  recoverStudyPages(listLectures().map((l) => l.id));
   for (const l of listLectures()) {
+    const pages = l.steps.find((s) => s.id === "pages");
+    if (pages?.status === "running") updateLecture(l.id, (x) => Object.assign(x.steps.find((s) => s.id === "pages")!, { status: "done", detail: "필요할 때 만들 수 있어요" }));
     if (l.status === "processing" || l.status === "queued") {
       updateLecture(l.id, (x) => {
         x.status = "interrupted";
@@ -381,6 +386,16 @@ async function runDocSteps(id: string, signal: AbortSignal, enter: (lane: Lane) 
     l.error = undefined;
   });
   const onUsage = (u: { input: number; output: number }) => addUsage(id, u);
+  if (!lecture.mediaPath && lecture.source.kind === "url") {
+    step.start("extract", "PDF 내려받는 중");
+    const target = lectureDir(id, "media", "source.pdf");
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    const res = await fetch(lecture.source.value, { signal, redirect: "follow" });
+    if (!res.ok || !res.body) throw new Error(`PDF를 내려받지 못했습니다 (${res.status}). 로그인이 필요한 링크라면 파일을 받아서 올려 주세요.`);
+    await pipeline(Readable.fromWeb(res.body as import("node:stream/web").ReadableStream), fs.createWriteStream(target));
+    if (!fs.readFileSync(target).subarray(0, 5).toString().startsWith("%PDF")) throw new Error("링크가 PDF 파일이 아닙니다(로그인 페이지일 수 있어요). 파일을 받아서 올려 주세요.");
+    lecture = updateLecture(id, (l) => (l.mediaPath = target));
+  }
   const file = lecture.mediaPath;
   if (!file || !fs.existsSync(file)) throw new Error(`PDF 파일을 찾을 수 없습니다: ${file ?? lecture.source.value}`);
 
@@ -459,11 +474,17 @@ async function runDocSteps(id: string, signal: AbortSignal, enter: (lane: Lane) 
   }
   step.done("materials");
 
-  // 5. interactive study pages -------------------------------------------------
-  step.start("pages", "인터랙티브 학습 페이지 만드는 중");
-  const made = await autoStudyPages(getLecture(id)!, (p, d) => step.progress("pages", p, d), signal);
-  step.done("pages", made ? `${made}개 페이지` : "필요할 때 만들 수 있어요");
+  // 5. interactive study pages, in the background: the document is ready to study now
   updateLecture(id, (l) => (l.status = "ready"));
+  step.start("pages", "인터랙티브 학습 페이지 만드는 중");
+  autoStudyPages(
+    getLecture(id)!,
+    (p, d) => step.progress("pages", p, d),
+    (made) => {
+      // the item may have been deleted or re-analyzed meanwhile
+      if (getLecture(id)?.steps.find((s) => s.id === "pages")?.status === "running") step.done("pages", made ? `${made}개 페이지` : "필요할 때 만들 수 있어요");
+    },
+  );
 }
 
 /** Throw away analysis artifacts so the lecture is re-analyzed (e.g. with another model). */

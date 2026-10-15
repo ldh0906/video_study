@@ -152,6 +152,11 @@ export function Library() {
     setTagFilter(new Set());
     setKinds(new Set());
   }, [folder?.id]);
+  // bulk actions only ever act on cards the student can see
+  useEffect(() => {
+    const shown = new Set(visible.map((l) => l.id));
+    setSelected((s) => ([...s].every((id) => shown.has(id)) ? s : new Set([...s].filter((id) => shown.has(id)))));
+  }, [visible]);
 
   const counts = (id: string) => {
     const items = all.filter((l) => l.folderId === id);
@@ -310,12 +315,14 @@ export function Library() {
       depth = Math.max(0, depth - 1);
       if (!depth) setFileDrag(false);
     };
+    // a file dropped anywhere must never make the browser open it and leave the app
     const dragOver = (e: DragEvent) => {
-      if (hasFiles(e) && !importing) e.preventDefault();
+      if (hasFiles(e)) e.preventDefault();
     };
     const drop = (e: DragEvent) => {
-      if (!hasFiles(e) || importing) return;
+      if (!hasFiles(e)) return;
       e.preventDefault();
+      if (importing) return;
       depth = 0;
       setFileDrag(false);
       const files = Array.from(e.dataTransfer?.files ?? []);
@@ -867,7 +874,8 @@ function ItemCard({
   const processing = l.status === "processing" || l.status === "queued";
   const running = l.steps.find((s) => s.status === "running");
   const isDoc = l.kind === "doc";
-  const type = isDoc ? DOC_TYPE_INFO[l.docType ?? "other"] : null;
+  // no badge until the analysis has said what the document is
+  const type = isDoc && l.docType ? DOC_TYPE_INFO[l.docType] : null;
   const isDragged = dragging?.[0] === l.id || (!!dragging && dragging.includes(l.id) && moved.current);
   const riding = !!dragging && !isDragged && dragging.includes(l.id);
   const tags = l.tags ?? [];

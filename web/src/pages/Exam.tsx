@@ -220,6 +220,17 @@ function TakeExam({ exam, attempt, byId, onDone }: { exam: Exam; attempt: ExamAt
     return () => clearInterval(t);
   }, []);
 
+  // leaving the page flushes what the debounce has not saved yet
+  const latest = useRef(answers);
+  latest.current = answers;
+  useEffect(
+    () => () => {
+      const s = JSON.stringify(latest.current);
+      if (s !== saved.current) void api.saveAnswers(exam.id, attempt.id, latest.current);
+    },
+    [exam.id, attempt.id],
+  );
+
   // autosave, so a closed tab loses nothing
   useEffect(() => {
     const t = setTimeout(() => {
@@ -331,11 +342,12 @@ function TakeExam({ exam, attempt, byId, onDone }: { exam: Exam; attempt: ExamAt
 }
 
 function QuestionShell({ q, n, byId, showSource, children, tone }: { q: ExamQuestion; n: number; byId: Map<string, LectureSummary>; showSource: boolean; children: React.ReactNode; tone?: "good" | "bad" | "partial" }) {
+  // while taking the exam (no source shown), citations are plain text
   const navigate = useNavigate();
   const src = q.source ? byId.get(q.source.lectureId) : undefined;
   const unit = src ? unitOf(src) : "time";
   return (
-    <AnchorProvider value={{ unit, seek: (v) => src && navigate(`/lecture/${src.id}?t=${Math.round(v)}`) }}>
+    <AnchorProvider value={{ unit, plain: !showSource, seek: (v) => src && navigate(`/lecture/${src.id}?t=${Math.round(v)}`) }}>
       <section
         id={`q-${q.id}`}
         className={cn(

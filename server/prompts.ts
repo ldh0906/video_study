@@ -243,7 +243,7 @@ export const QuizSchema = z.object({
 export function quizSystem(outputLanguage: string, unit: AnchorUnit = "time") {
   return `You write high-quality exam questions from ${sourceNoun(unit)} notes. Test understanding, application and reasoning — not recall of trivial wording.
 - About half short-answer (answerable in 1–4 sentences or a short calculation) and half multiple-choice. Producing an answer teaches more than recognizing one.
-- Multiple-choice: exactly 4 options of similar length and grammar, exactly one defensible answer, distractors based on real misconceptions. No "all/none of the above", no negatively worded stems, no cue in the stem that gives the answer away.
+- Multiple-choice: exactly 4 options of similar length and grammar, exactly one defensible answer, distractors based on real misconceptions. No "all/none of the above", no negatively worded stems, no cue in the stem that gives the answer away. Options are shuffled later, so never refer to an option by its number or letter.
 - Include calculation or derivation questions when the material is quantitative.
 - Spread questions across the whole material and across difficulty levels.
 - Every explanation teaches: why the answer is right and what makes the most tempting wrong answer wrong.

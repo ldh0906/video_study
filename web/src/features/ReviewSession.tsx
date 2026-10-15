@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
+import type { AnchorUnit } from "@shared/anchor";
 import { motion } from "motion/react";
 import { GraduationCap, Layers, Pencil, RotateCcw } from "lucide-react";
 import { toast } from "sonner";
 import type { Flashcard } from "@shared/types";
-import { Markdown, TimeChip } from "@/components/Markdown";
+import { AnchorProvider, Markdown, TimeChip } from "@/components/Markdown";
 import { Badge, Button, EmptyState, Kbd } from "@/components/ui";
 import { buildQueue, NEW_PER_DAY, previewInterval, schedule, type Rating } from "@/lib/srs";
 import { cn, focusOwnsActivation } from "@/lib/utils";
@@ -13,6 +14,8 @@ export interface ReviewItem {
   lectureId: string;
   /** shown when the session mixes lectures */
   lectureTitle?: string;
+  /** how the card's source is cited; absent = the open item's */
+  unit?: AnchorUnit;
   card: Flashcard;
 }
 
@@ -41,6 +44,7 @@ export function ReviewSession({
   inLecture?: boolean;
   empty?: ReactNode;
 }) {
+  const navigate = useNavigate();
   const [flipped, setFlipped] = useState(false);
   const [cram, setCram] = useState(false);
   const [sessionDone, setSessionDone] = useState(0);
@@ -114,7 +118,7 @@ export function ReviewSession({
       </Link>
     );
 
-  return (
+  const body = (
     <div>
       <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-muted">
         <span>
@@ -176,4 +180,7 @@ export function ReviewSession({
       </div>
     </div>
   );
+  if (inLecture) return body;
+  // outside an item's page, citations open that card's own source
+  return <AnchorProvider value={{ unit: item.unit ?? "time", seek: (v) => navigate(`/lecture/${item.lectureId}?t=${Math.round(v)}`) }}>{body}</AnchorProvider>;
 }

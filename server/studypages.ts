@@ -4,7 +4,7 @@ import { generateText } from "./llm";
 import { SUPPLEMENT_LABEL, languageDirective, sourceNoun } from "./prompts";
 import { docs, newId } from "./store";
 import { addUsage, notesContext } from "./study";
-import { estimateTokens, mapLimit, throttle } from "./pipeline/util";
+import { estimateTokens, throttle } from "./pipeline/util";
 
 /**
  * Interactive study pages: per chapter, the model writes an "explorable
@@ -13,7 +13,7 @@ import { estimateTokens, mapLimit, throttle } from "./pipeline/util";
  */
 
 /** Chapters past this many get their page on request, not during processing. */
-const AUTO_PAGES = 8;
+const AUTO_PAGES = 4;
 
 const KIT_REFERENCE = `<kit>
 Elements (custom tags; the kit styles and wires them up):
@@ -141,8 +141,27 @@ function save(lectureId: string, id: string, patch: Partial<StudyPage>) {
   );
 }
 
+/**
+ * Pages are written one or two at a time across all lectures: a "make all
+ * chapters" click or several PDFs finishing together must not start dozens
+ * of CLI processes.
+ */
+const PAGE_CONCURRENCY = 2;
+let active = 0;
+const waiting: (() => void)[] = [];
+async function inLine<T>(fn: () => Promise<T>): Promise<T> {
+  if (active >= PAGE_CONCURRENCY) await new Promise<void>((r) => waiting.push(r));
+  active++;
+  try {
+    return await fn();
+  } finally {
+    active--;
+    waiting.shift()?.();
+  }
+}
+
 /** Create the page entry and write it; resolves when the page is done or failed. */
-async function writePage(lecture: Lecture, chapter: number, prompt: string, signal?: AbortSignal): Promise<StudyPage> {
+async function writePage(lecture: Lecture, chapter: number, prompt: string): Promise<StudyPage> {
   const a = docs.analysis.get(lecture.id);
   if (!a) throw new Error("아직 분석이 끝나지 않았습니다.");
   const ch = a.overview.chapters[chapter];
@@ -158,70 +177,93 @@ async function writePage(lecture: Lecture, chapter: number, prompt: string, sign
     model: lecture.options.analysis.model,
     createdAt: Date.now(),
   };
-  // one page per chapter: a new one replaces the old
-  docs.studyPages.set(lecture.id, [...docs.studyPages.get(lecture.id).filter((p) => p.chapter !== chapter), page]);
-  // progress only touches its own field, so a late write can't undo the final status
-  const progress = throttle((n: number) => save(lecture.id, page.id, { progress: n }), 1500);
-  let chars = 0;
-  try {
-    const res = await generateText({
-      choice: lecture.options.analysis,
-      system: studyPageSystem(lecture.options.outputLanguage, unit),
-      messages: [
-        {
-          role: "user",
-          content: [
-            `<notes>\n${chapterContext(a, chapter)}\n</notes>`,
-            `${sourceNoun(unit) === "document" ? "Document" : "Lecture"}: ${a.overview.title}. Chapter ${chapter + 1} of ${a.overview.chapters.length}: ${ch.title}. ${ch.summary}`,
-            lecture.docType ? `Document type: ${lecture.docType}.` : "",
-            prompt ? `The student asks for: ${prompt}` : "",
-            "Build the interactive study page for this chapter.",
-          ]
-            .filter(Boolean)
-            .join("\n\n"),
+  // the old page of this chapter stays until the new one is ready
+  docs.studyPages.set(lecture.id, [...docs.studyPages.get(lecture.id), page]);
+  return inLine(async () => {
+    // progress only touches its own field, so a late write can't undo the final status
+    const progress = throttle((n: number) => save(lecture.id, page.id, { progress: n }), 1500);
+    let chars = 0;
+    try {
+      save(lecture.id, page.id, { progress: 0 });
+      const res = await generateText({
+        choice: lecture.options.analysis,
+        system: studyPageSystem(lecture.options.outputLanguage, unit),
+        messages: [
+          {
+            role: "user",
+            content: [
+              `<notes>\n${chapterContext(a, chapter)}\n</notes>`,
+              `${sourceNoun(unit) === "document" ? "Document" : "Lecture"}: ${a.overview.title}. Chapter ${chapter + 1} of ${a.overview.chapters.length}: ${ch.title}. ${ch.summary}`,
+              lecture.docType ? `Document type: ${lecture.docType}.` : "",
+              prompt ? `The student asks for: ${prompt}` : "",
+              "Build the interactive study page for this chapter.",
+            ]
+              .filter(Boolean)
+              .join("\n\n"),
+          },
+        ],
+        maxTokens: 40000,
+        onDelta: (d) => {
+          chars += d.length;
+          progress(chars);
         },
-      ],
-      maxTokens: 40000,
-      signal,
-      onDelta: (d) => {
-        chars += d.length;
-        progress(chars);
-      },
-    });
-    addUsage(lecture.id, res.usage);
-    const html = sanitizeStudyHtml(res.text);
-    if (html.length < 400 || !/<lk-|<section/i.test(html)) throw new Error("학습 페이지 형식이 아닌 응답을 받았습니다. 다시 만들어 주세요.");
-    const done = { ...page, html, status: "done" as const };
-    save(lecture.id, page.id, done);
-    return done;
-  } catch (err) {
-    const failed = { ...page, status: "error" as const, error: (err as Error).message || String(err) };
-    save(lecture.id, page.id, failed);
-    if (signal?.aborted) throw err;
-    return failed;
+      });
+      addUsage(lecture.id, res.usage);
+      const html = sanitizeStudyHtml(res.text);
+      if (html.length < 400 || !/<lk-|<section/i.test(html)) throw new Error("학습 페이지 형식이 아닌 응답을 받았습니다. 다시 만들어 주세요.");
+      const done = { ...page, html, status: "done" as const };
+      docs.studyPages.set(lecture.id, [...docs.studyPages.get(lecture.id).filter((p) => p.chapter !== chapter), done]);
+      return done;
+    } catch (err) {
+      return failPage(lecture.id, page, (err as Error).message || String(err));
+    }
+  });
+}
+
+/** A failed rewrite keeps the previous page and notes the failure on it. */
+function failPage(lectureId: string, page: StudyPage, error: string): StudyPage {
+  const pages = docs.studyPages.get(lectureId);
+  const previous = pages.filter((p) => p.chapter === page.chapter && p.id !== page.id && p.status === "done").at(-1);
+  if (previous) {
+    docs.studyPages.set(lectureId, pages.filter((p) => p.id !== page.id).map((p) => (p.id === previous.id ? { ...p, error: `다시 만들기 실패: ${error}` } : p)));
+    return { ...previous, error };
   }
+  const failed = { ...page, status: "error" as const, error };
+  save(lectureId, page.id, failed);
+  return failed;
 }
 
 /** API entry: start writing in the background and return the placeholder at once. */
 export function startStudyPage(lecture: Lecture, chapter: number, prompt: string): StudyPage {
   const promise = writePage(lecture, chapter, prompt);
   promise.catch(() => {});
-  const placeholder = docs.studyPages.get(lecture.id).find((p) => p.chapter === chapter && p.status === "generating");
-  return placeholder!;
+  return docs.studyPages.get(lecture.id).filter((p) => p.chapter === chapter && p.status === "generating").at(-1)!;
 }
 
-/** During processing: pages for the first chapters that have none yet. Returns how many exist afterwards. */
-export async function autoStudyPages(lecture: Lecture, onProgress: (p: number, detail: string) => void, signal: AbortSignal): Promise<number> {
+/**
+ * After a PDF is analyzed: pages for its first chapters, in the background
+ * so the document is ready to study (and the next one can be analyzed) at once.
+ */
+export function autoStudyPages(lecture: Lecture, onProgress: (p: number, detail: string) => void, onDone: (made: number) => void) {
   const a = docs.analysis.get(lecture.id);
-  if (!a) return 0;
-  const have = new Set(docs.studyPages.get(lecture.id).filter((p) => p.status === "done").map((p) => p.chapter));
-  const todo = a.overview.chapters.map((_, i) => i).filter((i) => i < AUTO_PAGES && !have.has(i));
+  const have = new Set(docs.studyPages.get(lecture.id).map((p) => p.chapter));
+  const todo = (a?.overview.chapters ?? []).map((_, i) => i).filter((i) => i < AUTO_PAGES && !have.has(i));
+  if (!todo.length) return onDone(0);
   let done = 0;
   onProgress(0, `0 / ${todo.length} 챕터`);
-  await mapLimit(todo, 2, async (i) => {
-    await writePage(lecture, i, "", signal);
-    done++;
-    onProgress(done / todo.length, `${done} / ${todo.length} 챕터`);
-  });
-  return docs.studyPages.get(lecture.id).filter((p) => p.status === "done").length;
+  void Promise.all(
+    todo.map((i) =>
+      writePage(lecture, i, "")
+        .catch(() => null)
+        .then(() => onProgress(++done / todo.length, `${done} / ${todo.length} 챕터`)),
+    ),
+  ).then(() => onDone(docs.studyPages.get(lecture.id).filter((p) => p.status === "done").length));
+}
+
+/** After a restart nothing is writing; pages left "generating" failed. */
+export function recoverStudyPages(lectureIds: string[]) {
+  for (const id of lectureIds) {
+    const pages = docs.studyPages.get(id);
+    for (const p of pages.filter((x) => x.status === "generating")) failPage(id, p, "앱이 다시 시작되어 중단됐어요. 다시 만들어 주세요.");
+  }
 }

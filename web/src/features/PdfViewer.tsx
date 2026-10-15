@@ -34,11 +34,12 @@ export function PdfViewer({ lecture, className }: { lecture: Lecture; className?
     task.promise
       .then(async (d) => {
         // page sizes up front, so the scroll height is right before anything renders
-        const out: { w: number; h: number }[] = [];
-        for (let i = 1; i <= d.numPages; i++) {
-          const vp = (await d.getPage(i)).getViewport({ scale: 1 });
-          out.push({ w: vp.width, h: vp.height });
-        }
+        const out = await Promise.all(
+          Array.from({ length: d.numPages }, async (_, i) => {
+            const vp = (await d.getPage(i + 1)).getViewport({ scale: 1 });
+            return { w: vp.width, h: vp.height };
+          }),
+        );
         if (!alive) return;
         setSizes(out);
         setDoc(d);
@@ -72,7 +73,7 @@ export function PdfViewer({ lecture, className }: { lecture: Lecture; className?
   useEffect(() => {
     if (!doc) return;
     player.attachPages(doc.numPages, goto);
-    return () => player.attachPages(doc.numPages, null);
+    return () => player.detachPages(goto);
   }, [doc, goto]);
 
   // the page whose top crossed the upper third is the current one
@@ -176,13 +177,18 @@ function PdfPage({ doc, n, scale, w, h, root }: { doc: PDFDocumentProxy; n: numb
   useEffect(() => {
     const el = box.current;
     if (!el) return;
-    const io = new IntersectionObserver(([e]) => e.isIntersecting && setVisible(true), { root: root.current, rootMargin: "800px 0px" });
+    // pages far off screen give their canvas back: a 500-page book would otherwise hold gigabytes
+    const io = new IntersectionObserver(([e]) => setVisible(e.isIntersecting), { root: root.current, rootMargin: "1600px 0px" });
     io.observe(el);
     return () => io.disconnect();
   }, [root]);
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) {
+      if (canvas.current) canvas.current.width = canvas.current.height = 0;
+      text.current?.replaceChildren();
+      return;
+    }
     let task: RenderTask | null = null;
     let layer: TextLayer | null = null;
     let cancelled = false;

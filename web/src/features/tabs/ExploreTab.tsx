@@ -33,8 +33,16 @@ export function ExploreTab({ lecture, analysis }: { lecture: Lecture; analysis: 
     queryFn: () => api.studyPages(lecture.id),
     refetchInterval: (q) => (q.state.data?.some((p) => p.status === "generating") ? 2000 : false),
   });
-  const byChapter = useMemo(() => new Map(pages.map((p) => [p.chapter, p])), [pages]);
-  const [chapter, setChapter] = useState(() => Number(localStorage.getItem(`explore:${lecture.id}`)) || 0);
+  // a chapter shows the page being written, else its newest page
+  const byChapter = useMemo(() => {
+    const m = new Map<number, StudyPage>();
+    for (const p of pages) {
+      const cur = m.get(p.chapter);
+      if (!cur || p.status === "generating" || (cur.status !== "generating" && p.createdAt >= cur.createdAt)) m.set(p.chapter, p);
+    }
+    return m;
+  }, [pages]);
+  const [chapter, setChapter] = useState(() => Math.min(Math.max(0, Number(localStorage.getItem(`explore:${lecture.id}`)) || 0), Math.max(0, chapters.length - 1)));
   const [asking, setAsking] = useState(false);
   const [request, setRequest] = useState("");
   const [full, setFull] = useState(false);
@@ -122,7 +130,7 @@ export function ExploreTab({ lecture, analysis }: { lecture: Lecture; analysis: 
             <MenuItem
               icon={<Sparkles />}
               onSelect={async () => {
-                // two at a time on the server would be nicer; the CLI handles these one request each
+                // the server writes two at a time; the rest wait their turn
                 for (const i of missing) await api.createStudyPage(lecture.id, i).catch(() => {});
                 void qc.invalidateQueries({ queryKey: ["studyPages", lecture.id] });
                 toast.success(`${missing.length}개 챕터의 페이지를 만들기 시작했어요`);
@@ -162,7 +170,9 @@ export function ExploreTab({ lecture, analysis }: { lecture: Lecture; analysis: 
               <div className="flex h-full flex-col items-center justify-center gap-3 p-6 text-center">
                 <Spinner className="size-6" />
                 <div className="text-[15px] font-semibold">“{page.title}” 학습 페이지를 만드는 중</div>
-                <p className="max-w-[360px] text-[13px] text-muted">노트를 바탕으로 예제·시뮬레이션·퀴즈를 설계하고 있어요{page.progress ? ` · ${Math.round(page.progress / 1000)}천 자 작성` : ""}.</p>
+                <p className="max-w-[360px] text-[13px] text-muted">
+                  {page.progress === undefined ? "앞의 페이지가 끝나면 시작해요. 다른 탭을 보고 있어도 괜찮아요." : `노트를 바탕으로 예제·시뮬레이션·퀴즈를 설계하고 있어요${page.progress ? ` · ${Math.round(page.progress / 1000)}천 자 작성` : ""}.`}
+                </p>
               </div>
             ) : page.status === "error" ? (
               <div className="flex h-full items-center justify-center p-6">
@@ -178,7 +188,21 @@ export function ExploreTab({ lecture, analysis }: { lecture: Lecture; analysis: 
                 />
               </div>
             ) : (
-              <StudyFrame page={page} lecture={lecture} onProgress={setProgress} />
+              <div className="flex h-full flex-col">
+                {page.error ? (
+                  <div className="flex shrink-0 items-center gap-2 border-b border-warning/30 bg-warning-soft px-3 py-1.5 text-[12.5px] text-warning">
+                    <span className="min-w-0 flex-1 truncate" title={page.error}>
+                      {page.error} · 이전 페이지를 보여 드려요
+                    </span>
+                    <button className="shrink-0 font-semibold hover:underline" onClick={() => make(chapter, page.prompt)}>
+                      다시 시도
+                    </button>
+                  </div>
+                ) : null}
+                <div className="min-h-0 flex-1">
+                  <StudyFrame page={page} lecture={lecture} onProgress={setProgress} />
+                </div>
+              </div>
             )}
         </motion.div>
       </div>
