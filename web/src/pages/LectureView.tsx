@@ -108,6 +108,22 @@ function saveValue(key: string, value: string) {
   } catch {}
 }
 
+/** Video layout: the left column's share of the width, and the video's share of that column's height. */
+const DEFAULT_SPLIT = 0.52;
+const DEFAULT_SHARE = 0.48;
+const LARGE = { split: 0.68, share: 0.85 };
+const clampSplit = (v: number) => Math.min(0.8, Math.max(0.25, v));
+const clampShare = (v: number) => Math.min(0.85, Math.max(0.25, v));
+
+function loadNumber(key: string, fallback: number, clamp: (v: number) => number) {
+  try {
+    const v = Number(localStorage.getItem(key));
+    return v ? clamp(v) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function useIsWide() {
   const [wide, setWide] = useState(() => window.matchMedia("(min-width: 1024px)").matches);
   useEffect(() => {
@@ -173,6 +189,31 @@ export function LectureView() {
   const [reprocessOpen, setReprocessOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const tabScroller = useRef<HTMLDivElement>(null);
+  const leftColumn = useRef<HTMLDivElement>(null);
+  const [split, setSplitState] = useState(() => loadNumber("split", DEFAULT_SPLIT, clampSplit));
+  const [videoShare, setVideoShareState] = useState(() => loadNumber("videoShare", DEFAULT_SHARE, clampShare));
+  const setSplit = useCallback((v: number) => {
+    setSplitState(v);
+    saveValue("split", String(v));
+  }, []);
+  const setVideoShare = useCallback((v: number) => {
+    setVideoShareState(v);
+    saveValue("videoShare", String(v));
+  }, []);
+  // the "large video" button remembers the layout it replaced
+  const beforeLarge = useRef<{ split: number; share: number } | null>(null);
+  const large = split >= LARGE.split - 0.02 && videoShare >= LARGE.share - 0.02;
+  const toggleLarge = useCallback(() => {
+    if (large) {
+      const prev = beforeLarge.current ?? { split: DEFAULT_SPLIT, share: DEFAULT_SHARE };
+      setSplit(prev.split);
+      setVideoShare(prev.share);
+    } else {
+      beforeLarge.current = { split, share: videoShare };
+      setSplit(LARGE.split);
+      setVideoShare(LARGE.share);
+    }
+  }, [large, split, videoShare, setSplit, setVideoShare]);
 
   // stopping playback when leaving the page
   useEffect(() => () => player.media?.pause(), []);
@@ -256,11 +297,19 @@ export function LectureView() {
       <PdfViewer lecture={lecture} className={wide ? "h-full" : "h-[52vh]"} />
     </Suspense>
   ) : (
-    <div className="flex h-full min-h-0 flex-col gap-3">
-      {/* capped by height so the transcript below always keeps a usable share of the column */}
-      <div className="mx-auto w-full max-w-[calc(48vh*16/9)] shrink-0">
+    // the column is a size container, so the video's width can follow a share of its height
+    <div ref={leftColumn} className={cn("flex h-full min-h-0 flex-col", wide ? "[container-type:size]" : "gap-3")}>
+      <div className="mx-auto w-full shrink-0" style={{ maxWidth: wide ? `calc(${videoShare * 100}cqh * 16 / 9)` : "calc(48vh * 16 / 9)" }}>
         {hasMedia ? (
-          <Player lecture={lecture} chapters={chapters} frames={frames} segments={transcript?.segments} onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)} />
+          <Player
+            lecture={lecture}
+            chapters={chapters}
+            frames={frames}
+            segments={transcript?.segments}
+            onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)}
+            large={wide ? large : undefined}
+            onToggleLarge={wide ? toggleLarge : undefined}
+          />
         ) : (
           <div className="flex aspect-video items-center justify-center rounded-2xl border border-border bg-surface-2 text-sm text-muted">
             <Spinner className="mr-2" /> 영상을 준비하는 중…
@@ -268,9 +317,12 @@ export function LectureView() {
         )}
       </div>
       {wide ? (
-        <div className="min-h-0 flex-1 rounded-2xl border border-border bg-surface p-2 pt-3">
-          <TranscriptPanel transcript={transcript} chapters={chapters} loading={!transcribed} />
-        </div>
+        <>
+          <RowHandle column={leftColumn} share={videoShare} onShare={setVideoShare} />
+          <div className="min-h-[96px] flex-1 rounded-2xl border border-border bg-surface p-2 pt-3">
+            <TranscriptPanel transcript={transcript} chapters={chapters} loading={!transcribed} />
+          </div>
+        </>
       ) : null}
     </div>
   );
@@ -363,7 +415,7 @@ export function LectureView() {
       <div className="flex h-full flex-col">
         <LectureHeader lecture={lecture} onReprocess={() => setReprocessOpen(true)} onSettings={() => openSettings()} onExport={() => setExportOpen(true)} />
         {wide ? (
-          <SplitPane left={left} right={right} />
+          <SplitPane left={left} right={right} ratio={split} onRatio={setSplit} />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
             <div className="shrink-0">{left}</div>
@@ -378,8 +430,8 @@ export function LectureView() {
   );
 }
 
-function SplitPane({ left, right }: { left: ReactNode; right: ReactNode }) {
-  const [ratio, setRatio] = useState(() => Number(localStorage.getItem("split") ?? 0.52) || 0.52);
+/** Two columns with a draggable divider; `ratio` is the left column's share of the width. */
+function SplitPane({ left, right, ratio, onRatio }: { left: ReactNode; right: ReactNode; ratio: number; onRatio: (v: number) => void }) {
   const container = useRef<HTMLDivElement>(null);
   const drag = (e: React.PointerEvent) => {
     e.preventDefault();
@@ -387,18 +439,12 @@ function SplitPane({ left, right }: { left: ReactNode; right: ReactNode }) {
     if (!el) return;
     const move = (ev: PointerEvent) => {
       const r = el.getBoundingClientRect();
-      setRatio(Math.min(0.7, Math.max(0.3, (ev.clientX - r.left) / r.width)));
+      onRatio(clampSplit((ev.clientX - r.left) / r.width));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       document.body.style.cursor = "";
-      setRatio((v) => {
-        try {
-          localStorage.setItem("split", String(v));
-        } catch {}
-        return v;
-      });
     };
     document.body.style.cursor = "col-resize";
     window.addEventListener("pointermove", move);
@@ -411,29 +457,66 @@ function SplitPane({ left, right }: { left: ReactNode; right: ReactNode }) {
       </div>
       <div
         onPointerDown={drag}
+        onDoubleClick={() => onRatio(DEFAULT_SPLIT)}
         tabIndex={0}
         onKeyDown={(e) => {
           if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
           e.preventDefault();
-          setRatio((v) => {
-            const next = Math.min(0.7, Math.max(0.3, v + (e.key === "ArrowLeft" ? -0.02 : 0.02)));
-            try {
-              localStorage.setItem("split", String(next));
-            } catch {}
-            return next;
-          });
+          onRatio(clampSplit(ratio + (e.key === "ArrowLeft" ? -0.02 : 0.02)));
         }}
         className="group flex w-5 shrink-0 cursor-col-resize items-center justify-center rounded-full outline-none"
         role="separator"
         aria-orientation="vertical"
-        aria-label="영상과 학습 패널 너비 조절"
-        aria-valuemin={30}
-        aria-valuemax={70}
+        aria-label="영상과 학습 패널 너비 조절 (두 번 누르면 기본값)"
+        aria-valuemin={25}
+        aria-valuemax={80}
         aria-valuenow={Math.round(ratio * 100)}
       >
         <div className="h-12 w-1 rounded-full bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
       </div>
       <div className="min-w-0 flex-1">{right}</div>
+    </div>
+  );
+}
+
+/** Between the video and the transcript: drag to give the video more or less of the column's height. */
+function RowHandle({ column, share, onShare }: { column: React.RefObject<HTMLDivElement | null>; share: number; onShare: (v: number) => void }) {
+  const drag = (e: React.PointerEvent) => {
+    e.preventDefault();
+    const el = column.current;
+    if (!el) return;
+    const move = (ev: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      onShare(clampShare((ev.clientY - r.top) / r.height));
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+    };
+    document.body.style.cursor = "row-resize";
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  return (
+    <div
+      onPointerDown={drag}
+      onDoubleClick={() => onShare(DEFAULT_SHARE)}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+        e.preventDefault();
+        onShare(clampShare(share + (e.key === "ArrowUp" ? -0.03 : 0.03)));
+      }}
+      className="group flex h-4 shrink-0 cursor-row-resize items-center justify-center outline-none"
+      role="separator"
+      aria-orientation="horizontal"
+      aria-label="영상 크기 조절 (두 번 누르면 기본값)"
+      aria-valuemin={25}
+      aria-valuemax={85}
+      aria-valuenow={Math.round(share * 100)}
+    >
+      <div className="h-1 w-12 rounded-full bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
     </div>
   );
 }

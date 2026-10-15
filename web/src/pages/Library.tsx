@@ -958,7 +958,7 @@ function ItemCard({
         <button
           data-no-open
           aria-label={selected ? "선택 해제" : "선택"}
-          onPointerDownCapture={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.stopPropagation();
             onSelect();
@@ -974,7 +974,8 @@ function ItemCard({
         <div
           data-no-open
           className="absolute top-2 right-2 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100 has-[[data-state=open]]:opacity-100 [@media(hover:none)]:opacity-100"
-          onPointerDownCapture={(e) => e.stopPropagation()}
+          // bubble phase: the menu trigger opens on pointerdown and must see it; only the card's drag must not
+          onPointerDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
           <Menu
@@ -1024,7 +1025,7 @@ function ItemCard({
       </div>
       <div className="p-4">
         <h3 className="line-clamp-2 min-h-[2.6em] text-[15px] leading-snug font-semibold tracking-tight">{l.title}</h3>
-        <div className="mt-2 flex min-h-6 flex-wrap items-center gap-1" data-no-open onPointerDownCapture={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+        <div className="mt-2 flex min-h-6 flex-wrap items-center gap-1" data-no-open onPointerDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
           <AnimatePresence initial={false}>
             {tags.slice(0, 3).map((t) => (
               <TagChip key={t} tag={t} />

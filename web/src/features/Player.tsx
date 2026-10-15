@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { AudioLines, Captions, Gauge, Maximize, MessageCircleQuestion, Minimize, Pause, Play, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from "lucide-react";
+import { AudioLines, Captions, Gauge, Maximize, MessageCircleQuestion, Minimize, Pause, PictureInPicture2, Play, RectangleHorizontal, RotateCcw, RotateCw, Volume1, Volume2, VolumeX } from "lucide-react";
 import { fmtTime } from "@shared/time";
 import type { Chapter, Frame, Lecture, Segment } from "@shared/types";
 import { Popover, Tooltip } from "@/components/ui";
@@ -79,12 +79,17 @@ export function Player({
   frames,
   segments: cues = [],
   onAsk,
+  large,
+  onToggleLarge,
 }: {
   lecture: Lecture;
   chapters: Chapter[];
   frames: Frame[];
   segments?: Segment[];
   onAsk: (t: number) => void;
+  /** whether the lecture page gives the video its large layout; absent where there is no layout to change */
+  large?: boolean;
+  onToggleLarge?: () => void;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
   const mediaRef = useRef<HTMLVideoElement & HTMLAudioElement>(null);
@@ -101,6 +106,7 @@ export function Player({
   const [flash, setFlash] = useState<string | null>(null);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
+  const [pip, setPip] = useState(false);
   const [hover, setHover] = useState<{ x: number; t: number } | null>(null);
   const [idle, setIdle] = useState(false);
   const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -148,6 +154,30 @@ export function Player({
     else setMuted((v) => !v);
   };
 
+  // picture-in-picture: the video floats above other windows while the student reads elsewhere
+  const canPip = video && typeof document !== "undefined" && document.pictureInPictureEnabled;
+  const togglePip = async () => {
+    const m = mediaRef.current as HTMLVideoElement | null;
+    if (!m) return;
+    try {
+      if (document.pictureInPictureElement) await document.exitPictureInPicture();
+      else await m.requestPictureInPicture();
+    } catch {
+      showFlash("이 브라우저에서는 PIP를 쓸 수 없어요");
+    }
+  };
+  useEffect(() => {
+    const m = mediaRef.current;
+    if (!m) return;
+    const on = () => setPip(document.pictureInPictureElement === m);
+    m.addEventListener("enterpictureinpicture", on);
+    m.addEventListener("leavepictureinpicture", on);
+    return () => {
+      m.removeEventListener("enterpictureinpicture", on);
+      m.removeEventListener("leavepictureinpicture", on);
+    };
+  }, [lecture.mediaPath]);
+
   useEffect(() => {
     const on = () => setFullscreen(document.fullscreenElement === wrap.current);
     document.addEventListener("fullscreenchange", on);
@@ -169,6 +199,8 @@ export function Player({
       else if (e.key === "ArrowLeft") player.seek(m.currentTime - 5, !m.paused);
       else if (e.key === "ArrowRight") player.seek(m.currentTime + 5, !m.paused);
       else if (k === "f" && video) toggleFullscreen();
+      else if (k === "p" && canPip) void togglePip();
+      else if (k === "t" && onToggleLarge) onToggleLarge();
       else if (k === "m") toggleMute();
       else if (k === "c" && hasCaptions) {
         setCaptions((v) => !v);
@@ -184,7 +216,7 @@ export function Player({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [video, hasCaptions, captions, muted, volume]);
+  }, [video, hasCaptions, captions, muted, volume, canPip, onToggleLarge]);
 
   const toggleFullscreen = () => {
     if (document.fullscreenElement) void document.exitFullscreen();
@@ -383,6 +415,16 @@ export function Player({
               </button>
             ))}
           </Popover>
+          {canPip ? (
+            <CtrlButton label={pip ? "PIP 끄기 (P)" : "작은 창으로 띄우기 · 다른 창 위에서 계속 보기 (P)"} onClick={() => void togglePip()}>
+              <PictureInPicture2 className={cn("size-[18px]", pip && "text-[#a5a5f7]")} />
+            </CtrlButton>
+          ) : null}
+          {onToggleLarge && !fullscreen ? (
+            <CtrlButton label={large ? "원래 크기로 (T)" : "영상 크게 보기 (T)"} onClick={onToggleLarge}>
+              <RectangleHorizontal className={cn("size-[18px]", large && "text-[#a5a5f7]")} />
+            </CtrlButton>
+          ) : null}
           {video ? (
             <CtrlButton label="전체 화면 (F)" onClick={toggleFullscreen}>
               {fullscreen ? <Minimize className="size-[18px]" /> : <Maximize className="size-[18px]" />}
