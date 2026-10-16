@@ -22,19 +22,23 @@ const queue: string[] = [];
 const running = new Map<string, AbortController>();
 
 /**
- * A FIFO line that one lecture at a time may hold. Lectures run through two
- * lanes: "media" (download, audio, whisper, frames — the GPU/disk heavy part)
- * and "ai" (analysis and study materials over the network). The next lecture
- * can transcribe while the previous one is being analyzed, but two lectures
- * never fight over the GPU.
+ * A FIFO line that `capacity()` lectures at a time may hold. Lectures run
+ * through two lanes: "media" (download, audio, whisper, frames — the GPU/disk
+ * heavy part) and "ai" (analysis and study materials over the network). The
+ * next lecture can transcribe while the previous one is being analyzed, but two
+ * lectures never fight over the GPU.
  */
 class Lane {
-  private busy = false;
+  private active = 0;
   private waiters: { resolve: () => void; signal: AbortSignal; onAbort: () => void }[] = [];
+
+  constructor(private capacity: () => number = () => 1) {}
 
   async acquire(signal: AbortSignal): Promise<() => void> {
     signal.throwIfAborted();
-    if (this.busy) {
+    // wake() counts a woken waiter's seat for it, so nobody slips in between
+    if (!this.waiters.length && this.active < this.seats()) this.active++;
+    else {
       await new Promise<void>((resolve, reject) => {
         const waiter = {
           resolve,
@@ -48,22 +52,45 @@ class Lane {
         this.waiters.push(waiter);
       });
     }
-    this.busy = true;
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      const next = this.waiters.shift();
-      if (!next) return void (this.busy = false);
-      // hand the lane straight to the next lecture so nobody can cut in line
-      next.signal.removeEventListener("abort", next.onAbort);
-      next.resolve();
+      this.active--;
+      this.wake();
     };
+  }
+
+  /** Hand free seats straight to the next lectures in line (also after the seat count went up). */
+  wake() {
+    while (this.waiters.length && this.active < this.seats()) {
+      const next = this.waiters.shift()!;
+      next.signal.removeEventListener("abort", next.onAbort);
+      this.active++;
+      next.resolve();
+    }
+  }
+
+  private seats() {
+    return Math.max(1, Math.floor(this.capacity()) || 1);
   }
 }
 
 const mediaLane = new Lane();
-const aiLane = new Lane();
+/** API-key analysis: one lecture at a time, so a key's rate limit and spend stay predictable. */
+const apiAiLane = new Lane();
+/** CLI analysis (claude / codex on the signed-in account): several lectures side by side. */
+const cliAiLane = new Lane(() => getSettings().cliParallel);
+
+function aiLaneFor(id: string) {
+  const provider = getLecture(id)?.options.analysis.provider;
+  return provider && getSettings().connection[provider] === "cli" ? cliAiLane : apiAiLane;
+}
+
+/** Settings changed: lectures waiting for analysis may now fit. */
+export function settingsChanged() {
+  cliAiLane.wake();
+}
 
 export function enqueue(id: string) {
   if (running.has(id) || queue.includes(id)) return;
@@ -318,7 +345,7 @@ async function runSteps(id: string, signal: AbortSignal, enter: (lane: Lane) => 
     const s = l.steps.find((x) => x.id === "analyze")!;
     if (s.status === "pending") s.detail = "앞 강의 분석이 끝나길 기다리는 중";
   });
-  await enter(aiLane);
+  await enter(aiLaneFor(id));
 
   // 5. per-section analysis ----------------------------------------------------
   let analysis = docs.analysis.get(id);
@@ -419,7 +446,7 @@ async function runDocSteps(id: string, signal: AbortSignal, enter: (lane: Lane) 
     const s = l.steps.find((x) => x.id === "analyze")!;
     if (s.status === "pending") s.detail = "앞 자료 분석이 끝나길 기다리는 중";
   });
-  await enter(aiLane);
+  await enter(aiLaneFor(id));
 
   // 2–3. analysis --------------------------------------------------------------
   let analysis = docs.analysis.get(id);

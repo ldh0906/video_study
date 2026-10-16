@@ -354,6 +354,12 @@ function ProcessingSection({ s, set }: SectionProps) {
       <Block title="동시 처리" description="여러 파트를 동시에 분석해요. 높을수록 빠르지만 계정 사용 한도에 빨리 닿을 수 있어요.">
         <Segmented value={String(s.concurrency)} onChange={(v) => set({ concurrency: Number(v) })} options={["1", "2", "3", "4", "6"].map((v) => ({ value: v, label: v }))} />
       </Block>
+      <Block
+        title="동시에 분석할 강의 수"
+        description="CLI(로그인한 Claude·Codex 계정)로 분석하는 강의는 여러 개를 함께 분석해요. API 키로 분석하는 강의는 항상 하나씩 처리해요."
+      >
+        <Segmented value={String(s.cliParallel)} onChange={(v) => set({ cliParallel: Number(v) })} options={["1", "2", "3", "4", "6"].map((v) => ({ value: v, label: v }))} />
+      </Block>
       <Block title="URL 다운로드 화질">
         <Segmented
           value={s.downloadQuality}

@@ -40,6 +40,8 @@ export interface Settings {
   visualAnalysis: boolean;
   framesPerSection: number;
   concurrency: number;
+  /** How many lectures may be analyzed at once when the analysis model runs through a CLI (API keys stay one at a time). */
+  cliParallel: number;
   downloadQuality: "480" | "720" | "1080";
   cookiesFromBrowser: "" | "chrome" | "edge" | "firefox" | "brave" | "whale";
   /** the model catalog the saved choices were last moved to */

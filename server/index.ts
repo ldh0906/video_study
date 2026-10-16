@@ -17,7 +17,7 @@ import { listAnthropicModels } from "./llm/anthropic";
 import { cliStatus, codexModels } from "./llm/cli";
 import { listOpenAIModels } from "./llm/openai";
 import { DATA_DIR, ROOT, WEB_DIST, lectureDir } from "./paths";
-import { cancel, enqueue, isBusy, recoverOnBoot, resetAnalysis, resetTranscript } from "./pipeline";
+import { cancel, enqueue, isBusy, recoverOnBoot, resetAnalysis, resetTranscript, settingsChanged } from "./pipeline";
 import { getSettings, publicSettings, saveSettings } from "./settings";
 import { deleteLecture, docs, freshSteps, getLecture, listFolders, listLectures, newId, saveFolders, saveLecture, updateLecture } from "./store";
 import { chat, generateMoreCards, generateQuiz, gradeAnswer, newCard, startMaterial } from "./study";
@@ -80,6 +80,7 @@ app.put("/api/settings", async (c) => {
     else patch[k] = (body[k] ?? "").trim();
   }
   saveSettings(patch);
+  settingsChanged();
   return c.json(publicSettings());
 });
 

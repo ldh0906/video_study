@@ -206,7 +206,8 @@ export async function downloadSubtitles(
   signal?: AbortSignal,
 ): Promise<{ file: string; kind: "manual" | "auto"; lang: string } | null> {
   const prefs = [opts.spokenLanguage, info.language ?? "", "ko", "en"];
-  const manualKeys = Object.keys(info.subtitles).filter((k) => k !== "live_chat");
+  // Not transcripts: YouTube live chat replay, Zoom's chapter markers ("Recording Started" spanning the whole video).
+  const manualKeys = Object.keys(info.subtitles).filter((k) => k !== "live_chat" && k !== "chapter");
   let lang: string | undefined = pickLang(manualKeys, prefs) ?? manualKeys[0];
   let kind: "manual" | "auto" = "manual";
   if (!lang) {

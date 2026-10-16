@@ -19,6 +19,7 @@ const DEFAULTS: Settings = {
   visualAnalysis: true,
   framesPerSection: 6,
   concurrency: 3,
+  cliParallel: 3,
   downloadQuality: "720",
   cookiesFromBrowser: "",
 };
