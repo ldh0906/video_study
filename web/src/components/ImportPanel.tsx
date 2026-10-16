@@ -71,7 +71,7 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
     const result = addImportFiles(files, incoming);
     setFiles(result.items);
     if (result.rejected.length) toast.error("영상·음성·PDF 또는 자막 파일을 선택해 주세요", { description: result.rejected.join(", ") });
-    if (result.unmatched.length) toast.warning("연결할 영상을 찾지 못한 자막이 있습니다", { description: `${result.unmatched.join(", ")} — 영상 옆 자막 버튼으로 직접 첨부해 주세요.` });
+    if (result.unmatched.length) toast.warning("연결할 영상을 찾지 못한 자막이 있어요", { description: `${result.unmatched.join(", ")} — 영상 옆 자막 버튼으로 직접 첨부해 주세요.` });
   };
 
   const setItemSubtitle = (id: string, subtitle?: File) => setFiles((items) => items.map((item) => item.id === id ? { ...item, subtitle, subtitleUploadId: undefined } : item));
@@ -109,8 +109,8 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
         }, () => stopRequested.current);
         const succeeded = results.filter((item) => item.status === "done");
         const failed = results.filter((item) => item.status === "error");
-        if (succeeded.length) toast.success(`${succeeded.length}개 자료를 등록했습니다`, { description: "영상과 PDF는 각각 따로 순서대로 분석합니다." });
-        if (failed.length) toast.error(`${failed.length}개 파일을 등록하지 못했습니다`, { description: "파일별 오류를 확인한 뒤 실패한 항목만 다시 시도할 수 있습니다." });
+        if (succeeded.length) toast.success(`${succeeded.length}개 자료를 등록했어요`, { description: "영상과 PDF는 각각 따로 순서대로 분석해요." });
+        if (failed.length) toast.error(`${failed.length}개 파일을 등록하지 못했어요`, { description: "파일별 오류를 확인한 뒤 실패한 항목만 다시 시도할 수 있어요." });
         if (!multiple && succeeded[0] && !stopRequested.current) navigate(`/lecture/${succeeded[0].lectureId}`);
         return;
       }
@@ -121,7 +121,7 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
       qc.invalidateQueries({ queryKey: ["lectures"] });
       navigate(`/lecture/${lecture.id}`);
     } catch (e) {
-      toast.error("시작하지 못했습니다", { description: (e as Error).message });
+      toast.error("시작하지 못했어요", { description: (e as Error).message });
     } finally {
       running.current = false;
       setBusy(false);
@@ -190,7 +190,7 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
                 <div>
                   <div className="text-[15px] font-semibold">강의 영상이나 PDF를 끌어다 놓거나 클릭해서 선택하세요</div>
                   <div className="mt-1 text-[13px] text-muted">MP4 · MKV · MOV · MP3 · M4A · PDF(교재·강의자료·과제·실습·기출)</div>
-                  <div className="mt-1 text-xs text-accent">여러 파일을 한 번에 선택하면 각각 따로 등록합니다</div>
+                  <div className="mt-1 text-xs text-accent">여러 파일을 한 번에 선택하면 각각 따로 등록해요</div>
                 </div>
               </>
             )}
@@ -205,7 +205,7 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
               placeholder="https://www.youtube.com/watch?v=…  또는 강의 사이트 영상 링크"
               className="h-12 rounded-xl text-[15px]"
             />
-            <p className="mt-2.5 text-[12.5px] text-muted">YouTube, Vimeo, 대부분의 강의·동영상 사이트를 지원합니다 (yt-dlp). 로그인이 필요한 사이트는 설정 → 분석 옵션에서 브라우저 쿠키를 켜세요.</p>
+            <p className="mt-2.5 text-[12.5px] text-muted">YouTube, Vimeo, 대부분의 강의·동영상 사이트를 지원해요 (yt-dlp). 로그인이 필요한 사이트는 설정 → 분석 옵션에서 브라우저 쿠키를 켜세요.</p>
           </div>
         ) : (
           <div className="rounded-2xl bg-surface-2/60 p-5">
@@ -217,13 +217,13 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
               placeholder="C:\Users\나\Videos\강의\3주차.mp4"
               className="h-12 rounded-xl font-mono text-[14px]"
             />
-            <p className="mt-2.5 text-[12.5px] text-muted">이미 내려받은 파일을 복사하지 않고 원래 위치에서 바로 분석합니다. 탐색기에서 Shift+우클릭 → “경로로 복사”를 붙여넣으세요.</p>
+            <p className="mt-2.5 text-[12.5px] text-muted">이미 내려받은 파일을 복사하지 않고 원래 위치에서 바로 분석해요. 탐색기에서 Shift+우클릭 → “경로로 복사”를 붙여넣으세요.</p>
           </div>
         )}
         {mode === "file" && files.length > 0 ? (
           <div className="mt-3 space-y-2 px-2">
             <div className="flex items-center justify-between gap-3 text-xs text-muted">
-              <span>영상에는 자막을 첨부할 수 있어요. 같은 이름의 자막을 함께 놓으면 자동 연결합니다.</span>
+              <span>영상에는 자막을 첨부할 수 있어요. 같은 이름의 자막을 함께 놓으면 자동 연결해요.</span>
               <button type="button" onClick={() => setFiles([])} className="shrink-0 hover:text-text">목록 비우기</button>
             </div>
             <ul className="max-h-[340px] space-y-2 overflow-y-auto" aria-label="가져올 영상 목록">
@@ -263,10 +263,10 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
               <div className="space-y-4">
                 <div>
                   <Label hint={multiple ? "파일 이름으로 개별 생성" : "비우면 자동"}>제목</Label>
-                  <Input disabled={multiple} value={multiple ? "" : title} onChange={(e) => setTitle(e.target.value)} placeholder={multiple ? "여러 영상의 제목은 각각 자동으로 정합니다" : "예: 선형대수 7강 — 고유값"} />
+                  <Input disabled={multiple} value={multiple ? "" : title} onChange={(e) => setTitle(e.target.value)} placeholder={multiple ? "여러 영상의 제목은 각각 자동으로 정해요" : "예: 선형대수 7강 — 고유값"} />
                 </div>
                 <div>
-                  <Label hint="AI가 참고합니다">강의 메모</Label>
+                  <Label hint="AI가 참고해요">강의 메모</Label>
                   <Textarea
                     rows={3}
                     value={focus}
@@ -289,10 +289,10 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
                         </button>
                       </span>
                     ) : (
-                      <span className="text-xs text-faint">있으면 받아쓰기를 건너뜁니다</span>
+                      <span className="text-xs text-faint">있으면 받아쓰기를 건너뛰어요</span>
                     )}
                   </div>
-                </div> : <p className="text-xs text-muted">자막은 위 영상 목록에서 개별 첨부하세요. 강의 메모와 분석 설정은 이번에 등록할 모든 영상에 공통으로 적용합니다.</p>}
+                </div> : <p className="text-xs text-muted">자막은 위 영상 목록에서 개별 첨부하세요. 강의 메모와 분석 설정은 이번에 등록할 모든 영상에 공통으로 적용해요.</p>}
               </div>
               <div className="space-y-4">
                 <div>
@@ -329,14 +329,14 @@ export function ImportPanel({ folder, initialFiles }: { folder?: { id: string; n
               “{folder.name}” 폴더에 추가돼요
             </span>
           ) : mode === "file" && files.length ? (
-            <span role="status">{completed} / {files.length}개 등록 완료{busy ? " · 등록이 끝날 때까지 이 화면을 열어 두세요" : remaining.some((item) => item.status === "error") ? " · 실패한 파일은 다시 시도하세요" : " · 한 파일씩 업로드합니다"}</span>
+            <span role="status">{completed} / {files.length}개 등록 완료{busy ? " · 등록이 끝날 때까지 이 화면을 열어 두세요" : remaining.some((item) => item.status === "error") ? " · 실패한 파일은 다시 시도하세요" : " · 한 파일씩 업로드해요"}</span>
           ) : settings ? (
             <span className="hidden truncate sm:block">
               {(analysis ?? settings.analysis).model} · 추론 {(analysis ?? settings.analysis).effort} · {settings.transcription === "local-whisper" ? "로컬 Whisper" : settings.transcription}
             </span>
           ) : null}
         </div>
-        {busy && mode === "file" ? <Button size="sm" disabled={stopping} onClick={() => { stopRequested.current = true; setStopping(true); }}>{stopping ? "현재 파일 처리 후 멈춥니다" : "남은 업로드 멈추기"}</Button> : null}
+        {busy && mode === "file" ? <Button size="sm" disabled={stopping} onClick={() => { stopRequested.current = true; setStopping(true); }}>{stopping ? "현재 파일 처리 후 멈춰요" : "남은 업로드 멈추기"}</Button> : null}
         <Button variant="primary" size="lg" disabled={!ready} loading={busy} onClick={start} className="px-6">
           {mode === "file" && files.length ? busy ? "등록 중" : remaining.length && remaining.every((item) => item.status === "error") ? `${remaining.length}개 다시 시도` : remaining.length ? `${remaining.length}개 등록` : "등록 완료" : "분석 시작"} {!busy ? <ArrowRight className="size-4" /> : null}
         </Button>

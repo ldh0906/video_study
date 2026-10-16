@@ -276,7 +276,7 @@ export function LectureView() {
             addToMemo: (text, time = null) => {
               setMemoAppend((m) => ({ text, time, n: (m?.n ?? 0) + 1 }));
               setMemoOpen(true);
-              toast.success("메모에 추가했습니다");
+              toast.success("메모에 추가했어요");
             },
             makeCard: (front, back = "", time = null) => setCardDraft({ front, back, time }),
             openExport: () => setExportOpen(true),
@@ -736,7 +736,7 @@ function ReprocessDialog({ lecture, open, onOpenChange }: { lecture: Lecture; op
       open={open}
       onOpenChange={onOpenChange}
       title="다시 분석하기"
-      description={`노트·퀴즈·카드${lecture.kind === "doc" ? "·학습 페이지" : ""}가 새로 만들어집니다. 내 메모와 대화는 유지돼요.`}
+      description={`노트·퀴즈·카드${lecture.kind === "doc" ? "·학습 페이지" : ""}가 새로 만들어져요. 내 메모와 대화는 유지돼요.`}
       footer={
         <Button
           variant="primary"
@@ -771,10 +771,10 @@ function ReprocessDialog({ lecture, open, onOpenChange }: { lecture: Lecture; op
           />
           <p className="mt-2 text-xs text-muted">
             {from === "analysis"
-              ? `기존 ${lecture.kind === "doc" ? "페이지 글자" : "대본"}로 다른 모델·추론 강도를 써서 다시 분석합니다.`
+              ? `기존 ${lecture.kind === "doc" ? "페이지 글자" : "대본"}로 다른 모델·추론 강도를 써서 다시 분석해요.`
               : lecture.kind === "doc"
-                ? "PDF의 글자와 그림 페이지를 처음부터 다시 읽습니다."
-                : "현재 설정의 받아쓰기 엔진으로 대본부터 새로 만듭니다."}
+                ? "PDF의 글자와 그림 페이지를 처음부터 다시 읽어요."
+                : "현재 설정의 받아쓰기 엔진으로 대본부터 새로 만들어요."}
           </p>
         </div>
         <div>

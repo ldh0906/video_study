@@ -55,7 +55,7 @@ export function QuizTab({ lecture }: { lecture: Lecture }) {
             </Button>
           </div>
           {quizzes.length === 0 ? (
-            <EmptyState icon={<ClipboardCheck />} title="아직 퀴즈가 없어요" description="분석이 끝나면 기본 퀴즈가 만들어집니다." />
+            <EmptyState icon={<ClipboardCheck />} title="아직 퀴즈가 없어요" description="분석이 끝나면 기본 퀴즈가 만들어져요." />
           ) : (
             <div className="space-y-2.5">
               {quizzes.map((q) => (
@@ -352,7 +352,7 @@ function QuestionCard({
                 <Markdown className="text-[13.5px]">{answer.grade.feedback}</Markdown>
               </div>
             ) : q.type === "mcq" ? (
-              <div className={cn("text-[14px] font-semibold", answer?.correct ? "text-success" : "text-danger")}>{answer?.correct ? "정답입니다!" : "오답이에요"}</div>
+              <div className={cn("text-[14px] font-semibold", answer?.correct ? "text-success" : "text-danger")}>{answer?.correct ? "정답이에요!" : "오답이에요"}</div>
             ) : null}
             {q.type === "short" ? (
               <div>

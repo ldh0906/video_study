@@ -86,7 +86,7 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
       setResult(r);
       qc.invalidateQueries({ queryKey: ["exports", lecture.id] });
     },
-    onError: (e) => toast.error("PDF를 만들지 못했습니다", { description: (e as Error).message }),
+    onError: (e) => toast.error("PDF를 만들지 못했어요", { description: (e as Error).message }),
   });
   useEffect(() => {
     if (!gen.isPending) return;
@@ -100,8 +100,8 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
     mutationFn: (file: File) => api.importPdf(lecture.id, file),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ["notes", lecture.id] });
-      if (r.imported) toast.success(`메모 ${r.imported}개를 가져왔습니다`, { description: "메모 탭 맨 아래에 추가했어요." });
-      else toast.info("가져올 입력 내용이 없습니다", { description: "타이핑용 학습서에 직접 입력한 칸만 가져옵니다." });
+      if (r.imported) toast.success(`메모 ${r.imported}개를 가져왔어요`, { description: "메모 탭 맨 아래에 추가했어요." });
+      else toast.info("가져올 입력 내용이 없어요", { description: "타이핑용 학습서에 직접 입력한 칸만 가져와요." });
     },
     onError: (e) => toast.error((e as Error).message),
   });
@@ -113,7 +113,7 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
       open={open}
       onOpenChange={onOpenChange}
       title="학습서 PDF 만들기"
-      description="정답은 부록으로 분리하고, 필기 공간과 회독·복습 칸까지 들어간 공부용 문서를 만듭니다."
+      description="정답은 부록으로 분리하고, 필기 공간과 회독·복습 칸까지 들어간 공부용 문서를 만들어요."
       className="max-w-[880px]"
       footer={
         <div className="flex w-full flex-wrap items-center justify-between gap-2">
@@ -204,8 +204,8 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
             </div>
             <p className="rounded-xl bg-surface-2 px-3 py-2.5 text-[12px] leading-relaxed text-muted">
               {o.fields
-                ? "요약·답·여백 칸에 Edge, Acrobat, PDF Expert 등에서 바로 입력할 수 있어요. 굿노트·노타빌리티는 입력 칸을 지원하지 않으니 손필기판을 쓰세요. 다 쓴 PDF는 ‘채운 PDF에서 메모 가져오기’로 앱 메모에 저장됩니다."
-                : "아이패드(굿노트·노타빌리티)나 인쇄해서 손으로 쓰는 판입니다. 필기 공간이 PDF 안에 미리 들어 있어요."}
+                ? "요약·답·여백 칸에 Edge, Acrobat, PDF Expert 등에서 바로 입력할 수 있어요. 굿노트·노타빌리티는 입력 칸을 지원하지 않으니 손필기판을 쓰세요. 다 쓴 PDF는 ‘채운 PDF에서 메모 가져오기’로 앱 메모에 저장돼요."
+                : "아이패드(굿노트·노타빌리티)나 인쇄해서 손으로 쓰는 판이에요. 필기 공간이 PDF 안에 미리 들어 있어요."}
             </p>
 
             {result ? (
@@ -295,7 +295,7 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
               <Row label="개념 구조 + 직접 그리는 개념 지도" checked={o.conceptMap} onChange={(conceptMap) => set({ conceptMap })} />
               <Row label="플래시카드 시트" hint="접어서 답을 가리는 방식" checked={o.cards} onChange={(cards) => set({ cards })} />
               <Row label="내 메모" checked={o.memo} onChange={(memo) => set({ memo })} />
-              <Row label="강의 대본 전문" hint="쪽수가 크게 늘어납니다" checked={o.transcript} onChange={(transcript) => set({ transcript })} />
+              <Row label="강의 대본 전문" hint="쪽수가 크게 늘어나요" checked={o.transcript} onChange={(transcript) => set({ transcript })} />
               {done.length ? (
                 <div className="px-2 pt-1.5">
                   <div className="mb-1.5 text-[12px] font-medium">학습 자료</div>
@@ -321,7 +321,7 @@ export function ExportDialog({ lecture, open, onOpenChange }: { lecture: Lecture
               </div>
             </div>
             <div className="px-2">
-              <Badge tone="accent">정답·해설은 항상 부록으로 분리됩니다</Badge>
+              <Badge tone="accent">정답·해설은 항상 부록으로 분리돼요</Badge>
             </div>
           </div>
         </div>

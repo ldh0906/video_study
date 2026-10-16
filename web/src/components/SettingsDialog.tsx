@@ -51,7 +51,7 @@ export function SettingsDialog({ open, onOpenChange, initial = "models" }: { ope
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title="설정" description="모든 변경은 바로 저장됩니다." className="max-w-[860px]">
+    <Dialog open={open} onOpenChange={onOpenChange} title="설정" description="모든 변경은 바로 저장돼요." className="max-w-[860px]">
       {!s ? null : (
         <div className="flex flex-col gap-6 md:flex-row">
           <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-44 md:flex-col">
@@ -100,10 +100,10 @@ interface SectionProps {
 function ModelsSection({ s, set }: SectionProps) {
   return (
     <>
-      <Block title="분석 모델" description="강의 노트, 개념 정리, 퀴즈, 학습 자료를 만듭니다. 어려운 강의일수록 강한 모델과 높은 추론 강도가 좋아요.">
+      <Block title="분석 모델" description="강의 노트, 개념 정리, 퀴즈, 학습 자료를 만들어요. 어려운 강의일수록 강한 모델과 높은 추론 강도가 좋아요.">
         <ModelPicker value={s.analysis} onChange={(analysis) => set({ analysis })} />
       </Block>
-      <Block title="대화 모델" description="질문 답변과 서술형 채점에 씁니다. 빠른 모델이 쾌적합니다.">
+      <Block title="대화 모델" description="질문 답변과 서술형 채점에 써요. 빠른 모델이 쾌적해요.">
         <ModelPicker value={s.chat} onChange={(chat) => set({ chat })} />
       </Block>
       <Block title="학습 자료 언어">
@@ -136,8 +136,8 @@ function ConnectionSection({ s, set, save }: SectionProps & { save: (p: Settings
         title={title}
         description={
           conn === "cli"
-            ? `설치된 ${cli} CLI로 로그인된 내 계정(구독)을 사용합니다. API 키가 필요 없어요.`
-            : "API 키로 직접 호출합니다. 사용량만큼 API 요금이 청구됩니다."
+            ? `설치된 ${cli} CLI로 로그인된 내 계정(구독)을 사용해요. API 키가 필요 없어요.`
+            : "API 키로 직접 호출해요. 사용량만큼 API 요금이 청구돼요."
         }
       >
         <Segmented
@@ -171,7 +171,7 @@ function ConnectionSection({ s, set, save }: SectionProps & { save: (p: Settings
       {row("anthropic", "Claude", "Claude Code", tools.data?.claude)}
       {row("openai", "GPT", "Codex", tools.data?.codex)}
       <p className="rounded-xl bg-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
-        CLI가 없다면 <code className="text-text">npm i -g @anthropic-ai/claude-code</code> 또는 <code className="text-text">npm i -g @openai/codex</code>로 설치한 뒤, 터미널에서 한 번 실행해 로그인하면 됩니다.
+        CLI가 없다면 <code className="text-text">npm i -g @anthropic-ai/claude-code</code> 또는 <code className="text-text">npm i -g @openai/codex</code>로 설치한 뒤, 터미널에서 한 번 실행해 로그인하면 돼요.
       </p>
     </>
   );
@@ -188,7 +188,7 @@ function KeyInput({ provider, hint, onSave }: { provider: Provider; hint: string
           e.preventDefault();
           await onSave(v.trim() || null);
           setV("");
-          toast.success("API 키를 저장했습니다.");
+          toast.success("API 키를 저장했어요.");
         }}
       >
         <Input type="password" value={v} onChange={(e) => setV(e.target.value)} placeholder={provider === "openai" ? "sk-..." : "sk-ant-..."} autoComplete="off" />
@@ -210,7 +210,7 @@ function TranscriptionSection({ s, set }: SectionProps) {
   const install = useMutation({
     mutationFn: api.installWhisper,
     onSuccess: () => {
-      toast.success("로컬 Whisper 엔진을 설치했습니다.");
+      toast.success("로컬 Whisper 엔진을 설치했어요.");
       qc.invalidateQueries({ queryKey: ["tools"] });
     },
     onError: (e) => toast.error((e as Error).message),
@@ -221,7 +221,7 @@ function TranscriptionSection({ s, set }: SectionProps) {
 
   return (
     <>
-      <Block title="받아쓰기 엔진" description="강의 음성을 텍스트로 바꿉니다. Claude/Codex CLI는 오디오를 받지 않으므로 로컬 Whisper를 추천합니다.">
+      <Block title="받아쓰기 엔진" description="강의 음성을 텍스트로 바꿔요. Claude/Codex CLI는 오디오를 받지 않으므로 로컬 Whisper를 추천해요.">
         <div className="grid gap-2">
           {TRANSCRIPTION_MODELS.map((m) => (
             <button
@@ -241,12 +241,12 @@ function TranscriptionSection({ s, set }: SectionProps) {
           ))}
         </div>
         {s.transcription !== "local-whisper" && !s.keys.openai.set ? (
-          <p className="mt-2 text-xs text-warning">OpenAI API 받아쓰기는 API 키(크레딧)가 필요합니다.</p>
+          <p className="mt-2 text-xs text-warning">OpenAI API 받아쓰기는 API 키(크레딧)가 필요해요.</p>
         ) : null}
       </Block>
 
       {s.transcription === "local-whisper" ? (
-        <Block title="로컬 Whisper" description={w?.version?.includes("GPU 가속") ? `${w.version}으로 받아쓰기를 처리합니다. 무료이고 오프라인으로 동작해요.` : "whisper.cpp 공식 빌드를 내려받아 이 PC의 CPU로 실행합니다. 긴 강의는 시간이 걸리지만 무료이고 오프라인으로 동작해요."}>
+        <Block title="로컬 Whisper" description={w?.version?.includes("GPU 가속") ? `${w.version}으로 받아쓰기를 처리해요. 무료이고 오프라인으로 동작해요.` : "whisper.cpp 공식 빌드를 내려받아 이 PC의 CPU로 실행해요. 긴 강의는 시간이 걸리지만 무료이고 오프라인으로 동작해요."}>
           <ToolRow
             name="whisper.cpp 엔진"
             info={w}
@@ -303,7 +303,7 @@ function TranscriptionSection({ s, set }: SectionProps) {
         </Block>
       ) : null}
 
-      <Block title="강의 언어" description="비워두면 자동으로 감지합니다. 알고 있다면 지정하는 편이 더 정확해요.">
+      <Block title="강의 언어" description="비워두면 자동으로 감지해요. 알고 있다면 지정하는 편이 더 정확해요.">
         <Segmented
           value={s.spokenLanguage}
           onChange={(spokenLanguage) => set({ spokenLanguage })}
@@ -317,7 +317,7 @@ function TranscriptionSection({ s, set }: SectionProps) {
         />
       </Block>
 
-      <Block title="자막 활용" description="URL 강의에 자막이 있으면 받아쓰기 대신 쓸 수 있어요. 자막은 즉시 처리됩니다.">
+      <Block title="자막 활용" description="URL 강의에 자막이 있으면 받아쓰기 대신 쓸 수 있어요. 자막은 즉시 처리돼요.">
         <Segmented
           value={s.subtitlePolicy}
           onChange={(subtitlePolicy) => set({ subtitlePolicy })}
@@ -335,7 +335,7 @@ function TranscriptionSection({ s, set }: SectionProps) {
 function ProcessingSection({ s, set }: SectionProps) {
   return (
     <>
-      <Block title="화면 분석" description="슬라이드·판서가 바뀌는 장면을 캡처해 AI에게 함께 보여줍니다. 수식·도표가 많은 강의에서 노트 품질이 크게 좋아져요.">
+      <Block title="화면 분석" description="슬라이드·판서가 바뀌는 장면을 캡처해 AI에게 함께 보여줘요. 수식·도표가 많은 강의에서 노트 품질이 크게 좋아져요.">
         <div className="flex items-center justify-between rounded-xl border border-border px-3.5 py-3">
           <span className="text-[13px] font-medium">슬라이드·판서 캡처 사용</span>
           <Switch checked={s.visualAnalysis} onChange={(visualAnalysis) => set({ visualAnalysis })} label="화면 분석" />
@@ -351,7 +351,7 @@ function ProcessingSection({ s, set }: SectionProps) {
           </div>
         ) : null}
       </Block>
-      <Block title="동시 처리" description="여러 파트를 동시에 분석합니다. 높을수록 빠르지만 계정 사용 한도에 빨리 닿을 수 있어요.">
+      <Block title="동시 처리" description="여러 파트를 동시에 분석해요. 높을수록 빠르지만 계정 사용 한도에 빨리 닿을 수 있어요.">
         <Segmented value={String(s.concurrency)} onChange={(v) => set({ concurrency: Number(v) })} options={["1", "2", "3", "4", "6"].map((v) => ({ value: v, label: v }))} />
       </Block>
       <Block title="URL 다운로드 화질">
@@ -365,7 +365,7 @@ function ProcessingSection({ s, set }: SectionProps) {
           ]}
         />
       </Block>
-      <Block title="로그인이 필요한 사이트" description="강의 사이트에 로그인된 브라우저의 쿠키를 yt-dlp가 사용합니다. (Chrome은 실행 중이면 실패할 수 있어 Firefox를 추천)">
+      <Block title="로그인이 필요한 사이트" description="강의 사이트에 로그인된 브라우저의 쿠키를 yt-dlp가 사용해요. (Chrome은 실행 중이면 실패할 수 있어 Firefox를 추천)">
         <Segmented
           value={s.cookiesFromBrowser}
           onChange={(cookiesFromBrowser) => set({ cookiesFromBrowser })}
@@ -388,13 +388,13 @@ function ToolsSection() {
   const install = useMutation({
     mutationFn: api.installYtdlp,
     onSuccess: () => {
-      toast.success("yt-dlp를 설치했습니다.");
+      toast.success("yt-dlp를 설치했어요.");
       qc.invalidateQueries({ queryKey: ["tools"] });
     },
     onError: (e) => toast.error((e as Error).message),
   });
   return (
-    <Block title="외부 도구" description="영상 처리와 다운로드에 쓰는 도구들입니다.">
+    <Block title="외부 도구" description="영상 처리와 다운로드에 쓰는 도구들이에요.">
       <div className="grid gap-2">
         <ToolRow name="ffmpeg · 오디오/영상 처리" info={tools.data?.ffmpeg} />
         <ToolRow

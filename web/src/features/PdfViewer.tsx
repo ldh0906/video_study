@@ -109,7 +109,7 @@ export function PdfViewer({ lecture, className }: { lecture: Lecture; className?
     return el ? Number(el.dataset.page) : null;
   }, []);
 
-  if (error) return <div className={cn("flex items-center justify-center rounded-2xl border border-border bg-surface p-6 text-sm text-danger", className)}>PDF를 열지 못했습니다: {error}</div>;
+  if (error) return <div className={cn("flex items-center justify-center rounded-2xl border border-border bg-surface p-6 text-sm text-danger", className)}>PDF를 열지 못했어요: {error}</div>;
 
   return (
     <div className={cn("flex min-h-0 flex-col overflow-hidden rounded-2xl border border-border bg-surface-2", className)}>

@@ -80,7 +80,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
         onDelta: (d) => setStreaming((s) => (s ? { ...s, text: s.text + d } : s)),
         signal: abort.current.signal,
       });
-      if (!res.ok) toast.error("답변을 받지 못했습니다", { description: res.error });
+      if (!res.ok) toast.error("답변을 받지 못했어요", { description: res.error });
     } catch (e) {
       if ((e as Error).name !== "AbortError") toast.error((e as Error).message);
     } finally {
@@ -100,7 +100,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
               <Sparkles className="size-6" />
             </div>
             <h3 className="font-serif text-[20px] font-semibold">무엇이든 물어보세요</h3>
-            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">{unit === "page" ? "자료 전체 내용을 알고 있는 튜터예요. 답변 속 쪽 번호를 누르면 그 페이지가 열립니다." : "강의 전체 내용을 알고 있는 튜터예요. 답변 속 시간을 누르면 그 장면으로 이동합니다."}</p>
+            <p className="mt-1.5 text-[13.5px] leading-relaxed text-muted">{unit === "page" ? "자료 전체 내용을 알고 있는 튜터예요. 답변 속 쪽 번호를 누르면 그 페이지가 열려요." : "강의 전체 내용을 알고 있는 튜터예요. 답변 속 시간을 누르면 그 장면으로 이동해요."}</p>
             <div className="mt-6 grid gap-2 sm:grid-cols-2">
               {(unit === "page" ? DOC_SUGGESTIONS : SUGGESTIONS).map((s) => (
                 <button key={s} onClick={() => send(s)} className="rounded-xl border border-border bg-surface px-3.5 py-3 text-left text-[13px] leading-snug transition-colors hover:border-accent hover:text-accent">
@@ -146,7 +146,7 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
                           size="icon-sm"
                           onClick={() => {
                             navigator.clipboard.writeText(m.content);
-                            toast.success("복사했습니다");
+                            toast.success("복사했어요");
                           }}
                         >
                           <Copy className="size-3.5" />

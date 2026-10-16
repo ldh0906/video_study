@@ -27,8 +27,8 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
       const fresh = await qc.fetchQuery({ queryKey: ["notes", lecture.id], queryFn: () => api.notes(lecture.id) });
       setContent(fresh.content);
       setSaved(true);
-      if (r.imported) toast.success(`PDF에서 메모 ${r.imported}개를 가져왔습니다`);
-      else toast.info("가져올 입력 내용이 없습니다", { description: "타이핑용 학습서에서 입력한 칸만 가져옵니다." });
+      if (r.imported) toast.success(`PDF에서 메모 ${r.imported}개를 가져왔어요`);
+      else toast.info("가져올 입력 내용이 없어요", { description: "타이핑용 학습서에서 입력한 칸만 가져와요." });
     } catch (e) {
       toast.error((e as Error).message);
     }
@@ -89,7 +89,7 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
           </Button>
         ) : null}
         <div className="flex-1" />
-        <Button size="sm" variant="ghost" onClick={() => fileInput.current?.click()} title="타이핑용 학습서 PDF에 입력한 내용을 메모로 가져옵니다">
+        <Button size="sm" variant="ghost" onClick={() => fileInput.current?.click()} title="타이핑용 학습서 PDF에 입력한 내용을 메모로 가져와요">
           <FileUp className="size-3.5" /> PDF 메모 가져오기
         </Button>
         <input
@@ -124,7 +124,7 @@ export function MemoTab({ lecture, appendRequest }: { lecture: Lecture; appendRe
         />
       ) : (
         <div className="flex-1 overflow-y-auto rounded-2xl border border-border bg-surface p-6">
-          {content.trim() ? <Markdown>{content}</Markdown> : <p className="text-sm text-faint">아직 메모가 없습니다.</p>}
+          {content.trim() ? <Markdown>{content}</Markdown> : <p className="text-sm text-faint">아직 메모가 없어요.</p>}
         </div>
       )}
     </div>

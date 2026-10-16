@@ -97,10 +97,10 @@ export function TranscriptPanel({ transcript, chapters = [], loading }: { transc
   if (!segs.length) {
     return loading ? (
       <div className="flex h-full items-center justify-center gap-2 text-sm text-muted">
-        <Spinner /> 받아쓰기가 끝나면 여기에 대본이 나타납니다
+        <Spinner /> 받아쓰기가 끝나면 여기에 대본이 나타나요
       </div>
     ) : (
-      <EmptyState icon={<Search />} title="대본이 없습니다" />
+      <EmptyState icon={<Search />} title="대본이 없어요" />
     );
   }
 

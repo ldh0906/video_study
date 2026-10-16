@@ -55,7 +55,7 @@ export function CardsTab({ lecture }: { lecture: Lecture }) {
               qc.setQueryData<Flashcard[]>(["flashcards", lecture.id], (old) => (old ?? []).map((c) => (c.id === x.card.id ? { ...c, ...patch } : c)));
               return api.updateCard(lecture.id, x.card.id, patch);
             }}
-            empty={<EmptyState icon={<Layers />} title="카드가 아직 없어요" description="분석이 끝나면 자동으로 만들어집니다. AI로 더 만들거나 직접 추가할 수도 있어요." />}
+            empty={<EmptyState icon={<Layers />} title="카드가 아직 없어요" description="분석이 끝나면 자동으로 만들어져요. AI로 더 만들거나 직접 추가할 수도 있어요." />}
           />
         </>
       ) : (
@@ -76,7 +76,7 @@ function CardList({ lecture, cards, onEdit }: { lecture: Lecture; cards: Flashca
     qc.setQueryData<Flashcard[]>(["flashcards", lecture.id], (old) => (old ?? []).filter((x) => x.id !== c.id));
     await api.deleteCard(lecture.id, c.id);
   };
-  if (!cards.length) return <EmptyState icon={<Layers />} title="카드가 없습니다" />;
+  if (!cards.length) return <EmptyState icon={<Layers />} title="카드가 없어요" />;
   return (
     <div>
       <div className="mb-3 flex gap-2">
@@ -129,7 +129,7 @@ export function CardEditor({ lecture, card, onClose }: { lecture: Lecture; card:
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["flashcards", lecture.id] });
-      toast.success(card?.id ? "카드를 수정했습니다" : "카드를 추가했습니다");
+      toast.success(card?.id ? "카드를 수정했어요" : "카드를 추가했어요");
       onClose();
     },
     onError: (e) => toast.error((e as Error).message),
@@ -172,7 +172,7 @@ function GenerateCards({ lecture, open, onOpenChange }: { lecture: Lecture; open
     mutationFn: () => api.generateCards(lecture.id, Number(count), focus),
     onSuccess: (cards) => {
       qc.invalidateQueries({ queryKey: ["flashcards", lecture.id] });
-      toast.success(`카드 ${cards.length}장을 만들었습니다`);
+      toast.success(`카드 ${cards.length}장을 만들었어요`);
       onOpenChange(false);
       setFocus("");
     },
@@ -183,7 +183,7 @@ function GenerateCards({ lecture, open, onOpenChange }: { lecture: Lecture; open
       open={open}
       onOpenChange={onOpenChange}
       title="AI로 카드 더 만들기"
-      description="기존 카드와 겹치지 않게 새 카드를 만듭니다."
+      description="기존 카드와 겹치지 않게 새 카드를 만들어요."
       footer={
         <Button variant="primary" loading={gen.isPending} onClick={() => gen.mutate()}>
           <Sparkles className="size-3.5" /> 만들기

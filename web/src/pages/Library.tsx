@@ -209,7 +209,7 @@ export function Library() {
         },
       });
     } catch (e) {
-      toast.error("옮기지 못했습니다", { description: (e as Error).message });
+      toast.error("옮기지 못했어요", { description: (e as Error).message });
     } finally {
       refresh();
       setTimeout(() => setFly({}), 600);
@@ -230,7 +230,7 @@ export function Library() {
     for (const l of items) await api.deleteLecture(l.id);
     setSelected(new Set());
     refresh();
-    toast.success("삭제했습니다.");
+    toast.success("삭제했어요.");
   };
 
   const removeFolder = async (f: Folder) => {
@@ -239,7 +239,7 @@ export function Library() {
     await api.deleteFolder(f.id);
     if (folder?.id === f.id) openFolder(null);
     refresh();
-    toast.success("폴더를 삭제했습니다.");
+    toast.success("폴더를 삭제했어요.");
   };
 
   const submitName = async (name: string) => {
@@ -581,7 +581,7 @@ export function Library() {
         title={naming?.kind === "lecture" ? "이름 바꾸기" : naming?.kind === "folder" ? "폴더 이름 바꾸기" : "새 폴더"}
         description={
           naming?.kind === "new-folder" && naming.moveIds?.length
-            ? `폴더를 만들고 ${naming.moveIds.length}개 항목을 옮깁니다.`
+            ? `폴더를 만들고 ${naming.moveIds.length}개 항목을 옮겨요.`
             : naming?.kind === "new-folder"
               ? "과목마다 폴더를 만들면 그 과목의 모든 자료로 시험을 만들 수 있어요."
               : undefined

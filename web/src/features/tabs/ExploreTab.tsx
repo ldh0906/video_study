@@ -211,7 +211,7 @@ export function ExploreTab({ lecture, analysis }: { lecture: Lecture; analysis: 
         open={asking}
         onOpenChange={setAsking}
         title={`“${chapters[chapter]?.title ?? ""}” 학습 페이지 ${page ? "다시 " : ""}만들기`}
-        description="원하는 방식을 적으면 반영해서 만들어요. 비워 두면 기본 구성으로 만듭니다."
+        description="원하는 방식을 적으면 반영해서 만들어요. 비워 두면 기본 구성으로 만들어요."
         footer={
           <Button
             variant="primary"

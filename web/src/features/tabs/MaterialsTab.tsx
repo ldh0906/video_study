@@ -58,7 +58,7 @@ export function MaterialsTab({ lecture }: { lecture: Lecture }) {
     <div className="mx-auto max-w-[760px] px-1 pb-16">
       <div className="mb-5">
         <h3 className="font-serif text-[20px] font-semibold">학습 자료 만들기</h3>
-        <p className="mt-0.5 text-[13px] text-muted">강의 전체 노트를 바탕으로 필요한 자료를 만들어요. 만든 자료는 여기에 보관됩니다.</p>
+        <p className="mt-0.5 text-[13px] text-muted">강의 전체 노트를 바탕으로 필요한 자료를 만들어요. 만든 자료는 여기에 보관돼요.</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         {PRESETS.map((p, i) => (
@@ -169,7 +169,7 @@ function MaterialReader({ lecture, material: m, onBack }: { lecture: Lecture; ma
               size="sm"
               onClick={() => {
                 navigator.clipboard.writeText(m.content);
-                toast.success("복사했습니다");
+                toast.success("복사했어요");
               }}
             >
               <Copy className="size-3.5" /> 복사

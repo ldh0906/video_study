@@ -10,15 +10,15 @@ import { cn, formatTokens } from "@/lib/utils";
 import { overallProgress } from "@/pages/Library";
 
 const STEPS: Record<StepId, { label: string; icon: React.ReactNode; hint: string }> = {
-  fetch: { label: "영상 준비", icon: <Download />, hint: "파일을 확인하거나 링크에서 영상을 내려받습니다" },
-  audio: { label: "오디오 추출", icon: <AudioLines />, hint: "음성만 가볍게 뽑아냅니다" },
-  transcribe: { label: "받아쓰기", icon: <Mic />, hint: "무음 구간에서 나눠 정확하게 받아씁니다" },
-  frames: { label: "화면 캡처", icon: <Film />, hint: "슬라이드·판서가 바뀌는 장면을 찾습니다" },
-  analyze: { label: "파트별 심층 분석", icon: <Brain />, hint: "노트, 개념, 어려운 부분, 카드를 만듭니다" },
-  synthesize: { label: "전체 구조 정리", icon: <Sparkles />, hint: "챕터, 요약, 용어집, 마인드맵을 만듭니다" },
-  materials: { label: "학습 자료", icon: <Layers />, hint: "플래시카드와 퀴즈를 준비합니다" },
-  extract: { label: "PDF 읽기", icon: <FileSearch />, hint: "페이지별 글자와 목차를 읽고, 그림이 있는 페이지를 찾습니다" },
-  pages: { label: "인터랙티브 학습 페이지", icon: <Blocks />, hint: "챕터마다 직접 만져 보며 이해하는 페이지를 만듭니다" },
+  fetch: { label: "영상 준비", icon: <Download />, hint: "파일을 확인하거나 링크에서 영상을 내려받아요" },
+  audio: { label: "오디오 추출", icon: <AudioLines />, hint: "음성만 가볍게 뽑아내요" },
+  transcribe: { label: "받아쓰기", icon: <Mic />, hint: "무음 구간에서 나눠 정확하게 받아써요" },
+  frames: { label: "화면 캡처", icon: <Film />, hint: "슬라이드·판서가 바뀌는 장면을 찾아요" },
+  analyze: { label: "파트별 심층 분석", icon: <Brain />, hint: "노트, 개념, 어려운 부분, 카드를 만들어요" },
+  synthesize: { label: "전체 구조 정리", icon: <Sparkles />, hint: "챕터, 요약, 용어집, 마인드맵을 만들어요" },
+  materials: { label: "학습 자료", icon: <Layers />, hint: "플래시카드와 퀴즈를 준비해요" },
+  extract: { label: "PDF 읽기", icon: <FileSearch />, hint: "페이지별 글자와 목차를 읽고, 그림이 있는 페이지를 찾아요" },
+  pages: { label: "인터랙티브 학습 페이지", icon: <Blocks />, hint: "챕터마다 직접 만져 보며 이해하는 페이지를 만들어요" },
 };
 
 function elapsed(ms: number) {
@@ -55,7 +55,7 @@ export function ProcessingPanel({ lecture, busy }: { lecture: Lecture; busy: boo
           {failed ? "문제가 생겼어요" : stopped ? "잠시 멈춤" : lecture.status === "queued" ? "차례를 기다리는 중" : lecture.kind === "doc" ? "자료를 분석하고 있어요" : "강의를 분석하고 있어요"}
         </div>
         <h2 className="font-serif text-[24px] leading-snug font-semibold tracking-tight">
-          {failed ? "분석을 마치지 못했습니다" : stopped ? "이어서 분석할 수 있어요" : "공부할 준비를 하는 중…"}
+          {failed ? "분석을 마치지 못했어요" : stopped ? "이어서 분석할 수 있어요" : "공부할 준비를 하는 중…"}
         </h2>
         {!failed && !stopped ? (
           <div className="mt-4 flex items-center gap-3">
@@ -145,7 +145,7 @@ export function ProcessingPanel({ lecture, busy }: { lecture: Lecture; busy: boo
           {lecture.usage.inputTokens ? ` · 토큰 ${formatTokens(lecture.usage.inputTokens)} 입력 / ${formatTokens(lecture.usage.outputTokens)} 출력` : ""}
         </div>
         {busy ? (
-          <Button size="sm" variant="ghost" onClick={() => act(() => api.cancel(lecture.id), "분석을 멈췄습니다. 언제든 이어서 할 수 있어요.")}>
+          <Button size="sm" variant="ghost" onClick={() => act(() => api.cancel(lecture.id), "분석을 멈췄어요. 언제든 이어서 할 수 있어요.")}>
             <Pause className="size-3.5" /> 멈추기
           </Button>
         ) : stopped ? (
@@ -156,7 +156,7 @@ export function ProcessingPanel({ lecture, busy }: { lecture: Lecture; busy: boo
       </div>
       {!failed && !stopped ? (
         <p className="mt-4 rounded-xl bg-surface-2 px-3.5 py-3 text-[12.5px] leading-relaxed text-muted">
-          창을 닫아도 분석은 계속됩니다. 받아쓰기가 끝나면 왼쪽에서 대본을 먼저 읽을 수 있고, 중간에 멈춰도 완료된 부분부터 이어서 진행해요.
+          창을 닫아도 분석은 계속돼요. 받아쓰기가 끝나면 왼쪽에서 대본을 먼저 읽을 수 있고, 중간에 멈춰도 완료된 부분부터 이어서 진행해요.
         </p>
       ) : null}
     </div>

@@ -76,7 +76,7 @@ export function ExamBuilder({
       open
       onOpenChange={(v) => !v && onClose()}
       title={folder ? `“${folder.name}” 모의고사 만들기` : "모의고사 만들기"}
-      description="고른 자료 전체를 보고, 교수님이 강조한 부분·과제·실습·기출 비중에 맞춰 출제해요. 다른 모델이 정답과 보기를 한 번 더 검토합니다."
+      description="고른 자료 전체를 보고, 교수님이 강조한 부분·과제·실습·기출 비중에 맞춰 출제해요. 다른 모델이 정답과 보기를 한 번 더 검토해요."
       className="max-w-[760px]"
       footer={
         <Button variant="primary" loading={busy} disabled={!picked.size} onClick={create}>
