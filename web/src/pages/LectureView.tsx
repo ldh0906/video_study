@@ -7,6 +7,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
+  ChevronUp,
   Hash,
   ClipboardCheck,
   Download,
@@ -192,6 +193,18 @@ export function LectureView() {
   const leftColumn = useRef<HTMLDivElement>(null);
   const [split, setSplitState] = useState(() => loadNumber("split", DEFAULT_SPLIT, clampSplit));
   const [videoShare, setVideoShareState] = useState(() => loadNumber("videoShare", DEFAULT_SHARE, clampShare));
+  // the transcript under the video can be put away; it stays reachable as a tab on the right
+  const [transcriptShown, setTranscriptShownState] = useState(() => {
+    try {
+      return localStorage.getItem("transcriptShown") !== "0";
+    } catch {
+      return true;
+    }
+  });
+  const setTranscriptShown = useCallback((v: boolean) => {
+    setTranscriptShownState(v);
+    saveValue("transcriptShown", v ? "1" : "0");
+  }, []);
   const setSplit = useCallback((v: number) => {
     setSplitState(v);
     saveValue("split", String(v));
@@ -299,7 +312,11 @@ export function LectureView() {
   ) : (
     // the column is a size container, so the video's width can follow a share of its height
     <div ref={leftColumn} className={cn("flex h-full min-h-0 flex-col", wide ? "[container-type:size]" : "gap-3")}>
-      <div className="mx-auto w-full shrink-0" style={{ maxWidth: wide ? `calc(${videoShare * 100}cqh * 16 / 9)` : "calc(48vh * 16 / 9)" }}>
+      <div
+        className="mx-auto w-full shrink-0"
+        // without the transcript the video may use the whole column (minus the bar that brings the transcript back)
+        style={{ maxWidth: wide ? (transcriptShown ? `calc(${videoShare * 100}cqh * 16 / 9)` : "calc((100cqh - 40px) * 16 / 9)") : "calc(48vh * 16 / 9)" }}
+      >
         {hasMedia ? (
           <Player
             lecture={lecture}
@@ -316,18 +333,31 @@ export function LectureView() {
           </div>
         )}
       </div>
-      {wide ? (
+      {wide && transcriptShown ? (
         <>
-          <RowHandle column={leftColumn} share={videoShare} onShare={setVideoShare} />
+          <RowHandle column={leftColumn} share={videoShare} onShare={setVideoShare} onHide={() => setTranscriptShown(false)} />
           <div className="min-h-[96px] flex-1 rounded-2xl border border-border bg-surface p-2 pt-3">
             <TranscriptPanel transcript={transcript} chapters={chapters} loading={!transcribed} />
           </div>
         </>
+      ) : wide ? (
+        <div className="flex shrink-0 justify-center pt-2">
+          <button
+            onClick={() => {
+              setTranscriptShown(true);
+              if (tab === "transcript") setTab("overview");
+            }}
+            className="inline-flex h-7 items-center gap-1 rounded-full border border-border bg-surface px-3 text-[12px] font-medium text-muted shadow-soft transition-colors hover:border-accent hover:text-accent"
+          >
+            <ChevronDown className="size-3.5" /> 영상 아래에 대본 펼치기
+          </button>
+        </div>
       ) : null}
     </div>
   );
 
-  const groups = wide || isDoc ? GROUPS : [GROUPS[0], TRANSCRIPT_GROUP, ...GROUPS.slice(1)];
+  // the transcript is a tab whenever it isn't under the video
+  const groups = isDoc || (wide && transcriptShown) ? GROUPS : [GROUPS[0], TRANSCRIPT_GROUP, ...GROUPS.slice(1)];
   const group = groups.find((g) => g.tabs.some((t) => t.id === tab)) ?? groups[0];
   const view = group.tabs.some((t) => t.id === tab) ? tab : group.tabs[0].id;
 
@@ -480,7 +510,7 @@ function SplitPane({ left, right, ratio, onRatio }: { left: ReactNode; right: Re
 }
 
 /** Between the video and the transcript: drag to give the video more or less of the column's height. */
-function RowHandle({ column, share, onShare }: { column: React.RefObject<HTMLDivElement | null>; share: number; onShare: (v: number) => void }) {
+function RowHandle({ column, share, onShare, onHide }: { column: React.RefObject<HTMLDivElement | null>; share: number; onShare: (v: number) => void; onHide: () => void }) {
   const drag = (e: React.PointerEvent) => {
     e.preventDefault();
     const el = column.current;
@@ -499,24 +529,33 @@ function RowHandle({ column, share, onShare }: { column: React.RefObject<HTMLDiv
     window.addEventListener("pointerup", up);
   };
   return (
-    <div
-      onPointerDown={drag}
-      onDoubleClick={() => onShare(DEFAULT_SHARE)}
-      tabIndex={0}
-      onKeyDown={(e) => {
-        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-        e.preventDefault();
-        onShare(clampShare(share + (e.key === "ArrowUp" ? -0.03 : 0.03)));
-      }}
-      className="group flex h-4 shrink-0 cursor-row-resize items-center justify-center outline-none"
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="영상 크기 조절 (두 번 누르면 기본값)"
-      aria-valuemin={25}
-      aria-valuemax={85}
-      aria-valuenow={Math.round(share * 100)}
-    >
-      <div className="h-1 w-12 rounded-full bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
+    <div className="relative flex shrink-0 items-center">
+      <div
+        onPointerDown={drag}
+        onDoubleClick={() => onShare(DEFAULT_SHARE)}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          e.preventDefault();
+          onShare(clampShare(share + (e.key === "ArrowUp" ? -0.03 : 0.03)));
+        }}
+        className="group flex h-5 flex-1 cursor-row-resize items-center justify-center outline-none"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="영상 크기 조절 (두 번 누르면 기본값)"
+        aria-valuemin={25}
+        aria-valuemax={85}
+        aria-valuenow={Math.round(share * 100)}
+      >
+        <div className="h-1 w-12 rounded-full bg-border transition-colors group-hover:bg-accent group-focus-visible:bg-accent" />
+      </div>
+      <button
+        onClick={onHide}
+        title="대본 숨기기 · 영상이 세로 공간을 모두 써요 (대본은 오른쪽 탭에서 볼 수 있어요)"
+        className="absolute right-1 inline-flex h-5 items-center gap-0.5 rounded-md px-1.5 text-[11.5px] font-medium text-faint transition-colors hover:bg-surface-2 hover:text-text"
+      >
+        <ChevronUp className="size-3.5" /> 대본 숨기기
+      </button>
     </div>
   );
 }
