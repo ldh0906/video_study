@@ -100,7 +100,7 @@ export function TranscriptPanel({ transcript, chapters = [], loading }: { transc
         <Spinner /> 받아쓰기가 끝나면 여기에 대본이 나타나요
       </div>
     ) : (
-      <EmptyState icon={<Search />} title="대본이 없어요" />
+      <EmptyState icon={<Search />} title="대본이 없어요" description="‘다시 분석하기’에서 받아쓰기부터 다시 하거나, 자막 파일을 첨부하면 여기에 나타나요." />
     );
   }
 

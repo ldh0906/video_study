@@ -32,10 +32,10 @@ import type { DocType, Exam, Folder, Lecture } from "@shared/types";
 import { ImportPanel } from "@/components/ImportPanel";
 import { NameDialog } from "@/components/NameDialog";
 import { TagChip, TagEditor } from "@/components/TagEditor";
-import { Badge, Button, Dialog, EmptyState, Input, Menu, MenuItem, MenuSeparator, MenuSub } from "@/components/ui";
+import { Badge, Button, Dialog, EmptyState, Input, Kbd, Menu, MenuItem, MenuSeparator, MenuSub, Skeleton } from "@/components/ui";
 import { ExamBuilder } from "@/features/ExamBuilder";
 import { api, type LectureSummary } from "@/lib/api";
-import { cn, relativeDate } from "@/lib/utils";
+import { cn, isTyping, relativeDate } from "@/lib/utils";
 
 const STATUS_LABEL: Record<Lecture["status"], string> = {
   queued: "대기 중",
@@ -104,6 +104,17 @@ export function Library() {
     refetchInterval: (q) => (q.state.data?.some((e) => e.status === "planning" || e.status === "writing") ? 2500 : false),
   });
   const [q, setQ] = useState("");
+  const searchBox = useRef<HTMLInputElement>(null);
+  // "/" jumps to search from anywhere on the page, as on Toss Securities
+  useEffect(() => {
+    const on = (e: KeyboardEvent) => {
+      if (e.key !== "/" || isTyping(e) || e.ctrlKey || e.metaKey || e.altKey || !searchBox.current) return;
+      e.preventDefault();
+      searchBox.current.focus();
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, []);
   const [kinds, setKinds] = useState<Set<Kind>>(new Set());
   const [tagFilter, setTagFilter] = useState<Set<string>>(new Set());
   const [naming, setNaming] = useState<Naming | null>(null);
@@ -386,6 +397,16 @@ export function Library() {
         <ImportPanel folder={folder} initialFiles={importing?.files} />
       </Dialog>
 
+      {!lectures ? (
+        <section className="pt-8 sm:pt-10" aria-busy>
+          <Skeleton className="mb-6 h-8 w-40" />
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="aspect-[16/12] rounded-2xl" />
+            ))}
+          </div>
+        </section>
+      ) : null}
       {hasLibrary ? (
         <section className="pt-8 sm:pt-10">
           <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
@@ -412,7 +433,7 @@ export function Library() {
               ) : (
                 <h2 className="font-serif text-[22px] font-semibold tracking-tight">내 강의</h2>
               )}
-              <p className="mt-0.5 text-[13px] text-muted">
+              <p className="mt-0.5 text-[13px] text-muted tabular-nums">
                 {folder
                   ? `${counts(folder.id).total}개 항목${counts(folder.id).docs ? ` · PDF ${counts(folder.id).docs}개` : ""}`
                   : `${all.length}개 항목${folders.length ? ` · 폴더 ${folders.length}개` : ""}`}
@@ -445,7 +466,19 @@ export function Library() {
               {all.length > 3 ? (
                 <div className="relative flex-1 sm:w-56 sm:flex-none">
                   <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-faint" />
-                  <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={folder ? "이 폴더에서 검색" : "제목·태그 검색"} className="h-9 pl-9" />
+                  <Input
+                    ref={searchBox}
+                    value={q}
+                    onChange={(e) => setQ(e.target.value)}
+                    onKeyDown={(e) => e.key === "Escape" && (setQ(""), e.currentTarget.blur())}
+                    placeholder={folder ? "이 폴더에서 검색" : "제목·태그 검색"}
+                    className="h-9 pr-9 pl-9"
+                  />
+                  {!q ? (
+                    <span className="pointer-events-none absolute top-1/2 right-2.5 -translate-y-1/2">
+                      <Kbd>/</Kbd>
+                    </span>
+                  ) : null}
                 </div>
               ) : null}
             </div>
@@ -763,7 +796,7 @@ function FolderTile({
       </motion.div>
       <div className="min-w-0 flex-1">
         <div className="truncate text-[14px] font-semibold tracking-tight">{folder.name}</div>
-        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
+        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted tabular-nums">
           <span>
             {total}개{docs ? ` · PDF ${docs}` : ""}
           </span>
@@ -798,7 +831,7 @@ function ExamShelf({ exams, onOpen }: { exams: Exam[]; onOpen: (e: Exam) => void
               className="flex min-h-[96px] w-[230px] shrink-0 flex-col rounded-2xl border border-border bg-surface p-3.5 text-left shadow-soft transition-colors hover:border-border-strong"
             >
               <span className="line-clamp-2 text-[14px] leading-snug font-semibold">{e.title}</span>
-              <span className="mt-auto flex w-full items-center gap-2 pt-3 text-[12px] text-muted">
+              <span className="mt-auto flex w-full items-center gap-2 pt-3 text-[12px] text-muted tabular-nums">
                 {busy ? (
                   <>
                     <span className="size-1.5 animate-pulse rounded-full bg-accent" />
@@ -1050,7 +1083,7 @@ function ItemCard({
             }
           />
         </div>
-        <div className="mt-2.5 flex items-center gap-2 text-xs text-muted">
+        <div className="mt-2.5 flex items-center gap-2 text-xs text-muted tabular-nums">
           {processing ? (
             <>
               <span className="size-1.5 animate-pulse rounded-full bg-accent" />

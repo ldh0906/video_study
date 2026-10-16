@@ -9,6 +9,8 @@
   --surface: #ffffff;
   --surface-2: #f2f0ea;
   --surface-3: #e9e6de;
+  /* menus, dialogs and toasts: the top of the three surface steps */
+  --float: #ffffff;
   --border: #e5e2d9;
   --border-strong: #d4d0c5;
   --text: #1c1b18;
@@ -35,6 +37,7 @@
   --surface: #191917;
   --surface-2: #21201e;
   --surface-3: #2a2926;
+  --float: #252421;
   --border: #2c2b28;
   --border-strong: #3b3a36;
   --text: #ecebe5;
@@ -61,6 +64,7 @@
   --color-surface: var(--surface);
   --color-surface-2: var(--surface-2);
   --color-surface-3: var(--surface-3);
+  --color-float: var(--float);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-text: var(--text);
@@ -410,3 +414,41 @@ body {
 .textLayer ::selection { background: rgba(91, 91, 214, 0.3); }
 .textLayer br::selection { background: transparent; }
 .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0; z-index: 0; cursor: default; user-select: none; }
+
+/*
+ * Loading placeholders appear only when loading lasts over half a second, so
+ * a fast load never flashes a skeleton (after Toss Securities' web app).
+ */
+@keyframes skeleton-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes skeleton-shine {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -50% 0;
+  }
+}
+.skeleton {
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+  background-size: 200% 100%;
+  animation:
+    skeleton-in 0.1s ease 0.5s both,
+    skeleton-shine 1.2s linear infinite;
+}
+
+/* the system's "reduce motion" setting turns animation into instant changes */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

@@ -76,7 +76,7 @@ function CardList({ lecture, cards, onEdit }: { lecture: Lecture; cards: Flashca
     qc.setQueryData<Flashcard[]>(["flashcards", lecture.id], (old) => (old ?? []).filter((x) => x.id !== c.id));
     await api.deleteCard(lecture.id, c.id);
   };
-  if (!cards.length) return <EmptyState icon={<Layers />} title="카드가 없어요" />;
+  if (!cards.length) return <EmptyState icon={<Layers />} title="카드가 없어요" description="노트나 대본에서 문장을 선택하면 바로 카드로 만들 수 있어요." />;
   return (
     <div>
       <div className="mb-3 flex gap-2">

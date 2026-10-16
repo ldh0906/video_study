@@ -174,7 +174,7 @@ export function Dialog({
             initialFocus.current.focus();
           }}
           className={cn(
-            "fixed top-1/2 left-1/2 z-50 flex max-h-[min(88vh,820px)] w-[calc(100vw-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-border bg-surface shadow-float outline-none data-[state=open]:animate-[popIn_180ms_cubic-bezier(0.2,0.8,0.2,1)]",
+            "fixed top-1/2 left-1/2 z-50 flex max-h-[min(88vh,820px)] w-[calc(100vw-32px)] max-w-lg -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-border bg-float shadow-float outline-none data-[state=open]:animate-[popIn_180ms_cubic-bezier(0.2,0.8,0.2,1)]",
             className,
           )}
         >
@@ -222,7 +222,7 @@ export function Popover({
           align={align}
           sideOffset={6}
           collisionPadding={12}
-          className={cn("z-50 rounded-xl border border-border bg-surface p-1.5 shadow-float outline-none data-[state=open]:animate-[popIn_140ms_ease]", className)}
+          className={cn("z-50 rounded-xl border border-border bg-float p-1.5 shadow-float outline-none data-[state=open]:animate-[popIn_140ms_ease]", className)}
         >
           {children}
         </RPopover.Content>
@@ -254,7 +254,7 @@ export function Menu({ trigger, children, align = "end" }: { trigger: ReactNode;
         <RMenu.Content
           align={align}
           sideOffset={6}
-          className="z-50 min-w-[200px] rounded-xl border border-border bg-surface p-1.5 shadow-float data-[state=open]:animate-[popIn_140ms_ease]"
+          className="z-50 min-w-[200px] rounded-xl border border-border bg-float p-1.5 shadow-float data-[state=open]:animate-[popIn_140ms_ease]"
         >
           {children}
         </RMenu.Content>
@@ -292,7 +292,7 @@ export function MenuSub({ label, icon, children }: { label: ReactNode; icon?: Re
         <RMenu.SubContent
           sideOffset={6}
           collisionPadding={12}
-          className="z-50 max-h-[min(60vh,420px)] min-w-[200px] overflow-y-auto rounded-xl border border-border bg-surface p-1.5 shadow-float data-[state=open]:animate-[popIn_140ms_ease]"
+          className="z-50 max-h-[min(60vh,420px)] min-w-[200px] overflow-y-auto rounded-xl border border-border bg-float p-1.5 shadow-float data-[state=open]:animate-[popIn_140ms_ease]"
         >
           {children}
         </RMenu.SubContent>
@@ -328,6 +328,11 @@ export function Progress({ value, className }: { value: number; className?: stri
 
 export function Kbd({ children }: { children: ReactNode }) {
   return <kbd className="inline-flex h-5 min-w-5 items-center justify-center rounded-md border border-border bg-surface-2 px-1 font-sans text-[11px] font-medium text-muted">{children}</kbd>;
+}
+
+/** A loading placeholder that shows only if loading takes over half a second. */
+export function Skeleton({ className }: { className?: string }) {
+  return <div aria-hidden className={cn("skeleton", className)} />;
 }
 
 export function EmptyState({ icon, title, description, action }: { icon: ReactNode; title: ReactNode; description?: ReactNode; action?: ReactNode }) {

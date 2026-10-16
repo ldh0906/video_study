@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
+import { MotionConfig } from "motion/react";
 import { AppShell, TopBar } from "./App";
 import { TooltipProvider } from "./components/ui";
 import { Library } from "./pages/Library";
@@ -62,11 +63,14 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <TooltipProvider>
-        <RouterProvider router={router} />
+        {/* animations follow the system's reduce-motion setting */}
+        <MotionConfig reducedMotion="user">
+          <RouterProvider router={router} />
+        </MotionConfig>
         <Toaster
           position="bottom-center"
           toastOptions={{
-            style: { background: "var(--surface)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 14, fontFamily: "var(--font-sans)" },
+            style: { background: "var(--float)", color: "var(--text)", border: "1px solid var(--border)", borderRadius: 14, fontFamily: "var(--font-sans)" },
           }}
         />
       </TooltipProvider>

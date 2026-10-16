@@ -5,7 +5,7 @@ import { ArrowLeft, ArrowRight, Check, ChevronRight, ClipboardCheck, Eye, Plus, 
 import { toast } from "sonner";
 import type { GradeResult, Lecture, Quiz, QuizQuestion } from "@shared/types";
 import { Markdown, TimeChip } from "@/components/Markdown";
-import { Badge, Button, Dialog, EmptyState, Input, Label, Progress, Segmented, Spinner, Textarea } from "@/components/ui";
+import { Badge, Button, Dialog, EmptyState, Input, Label, Progress, Segmented, Skeleton, Spinner, Textarea } from "@/components/ui";
 import { api } from "@/lib/api";
 import { cn, relativeDate } from "@/lib/utils";
 
@@ -37,7 +37,13 @@ export function QuizTab({ lecture }: { lecture: Lecture }) {
   const [genOpen, setGenOpen] = useState(false);
   const quiz = quizzes.find((q) => q.id === active);
 
-  if (isLoading) return <div className="flex justify-center py-16"><Spinner /></div>;
+  if (isLoading)
+    return (
+      <div className="space-y-3 py-4" aria-busy>
+        <Skeleton className="h-24" />
+        <Skeleton className="h-24" />
+      </div>
+    );
 
   return (
     <div className="mx-auto max-w-[720px] px-1 pb-16">

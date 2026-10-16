@@ -174,10 +174,11 @@ export function ChatTab({ lecture, pending, onPendingConsumed }: { lecture: Lect
               streaming.text ? (
                 <Markdown streaming>{streaming.text}</Markdown>
               ) : (
-                <div className="flex items-center gap-1.5 py-2">
+                <div className="flex items-center gap-1.5 py-2" role="status">
                   {[0, 1, 2].map((i) => (
                     <span key={i} className="size-1.5 animate-bounce rounded-full bg-accent" style={{ animationDelay: `${i * 0.15}s` }} />
                   ))}
+                  <span className="ml-1 text-[12.5px] text-muted">답을 정리하고 있어요</span>
                 </div>
               )
             ) : null}
