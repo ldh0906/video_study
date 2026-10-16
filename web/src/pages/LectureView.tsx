@@ -26,6 +26,9 @@ import {
   Captions,
   FileDown,
   GraduationCap,
+  LayoutPanelLeft,
+  PlayCircle,
+  RotateCcw,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -38,7 +41,7 @@ import { ThemeMenu, useOpenSettings } from "@/App";
 import { ModelPicker } from "@/components/ModelPicker";
 import { NameDialog } from "@/components/NameDialog";
 import { TagChip, TagEditor } from "@/components/TagEditor";
-import { Button, Dialog, Label, Menu, MenuItem, MenuSeparator, Segmented, Spinner, Tooltip } from "@/components/ui";
+import { Button, Dialog, Label, Menu, MenuItem, MenuSeparator, Segmented, Skeleton, Spinner, Tooltip } from "@/components/ui";
 import { Player } from "@/features/Player";
 import { ProcessingPanel } from "@/features/ProcessingPanel";
 import { StudyContext, type StudyContextValue, type TabId } from "@/features/study-context";
@@ -54,6 +57,8 @@ import { MindmapTab } from "@/features/tabs/MindmapTab";
 import { NotesTab } from "@/features/tabs/NotesTab";
 import { OverviewTab } from "@/features/tabs/OverviewTab";
 import { QuizTab } from "@/features/tabs/QuizTab";
+import { Workspace, type WidgetDef } from "@/features/workspace/Workspace";
+import { ALL_WIDGETS, PRESETS, groupOf, loadLayout, preset, removeWidget, saveLayout, showWidget, shown, type LayoutNode, type PresetId, type SourceKind, type WidgetId } from "@/features/workspace/layout";
 import { api } from "@/lib/api";
 import { player } from "@/lib/player";
 import { cn } from "@/lib/utils";
@@ -157,6 +162,31 @@ export function LectureView() {
   const due = dueToday(cards);
   const isDoc = lecture?.kind === "doc";
 
+  // the panel workspace (wide screens, once analyzed); one saved layout per kind of source
+  const kind: SourceKind = lecture?.kind === "doc" ? "doc" : "video";
+  const [layout, setLayoutState] = useState<LayoutNode | null>(null);
+  const [maximized, setMaximized] = useState<string | null>(null);
+  useEffect(() => {
+    if (lecture) setLayoutState(loadLayout(kind));
+  }, [lecture?.id, kind]);
+  const updateLayout = useCallback(
+    (fn: (l: LayoutNode) => LayoutNode) =>
+      setLayoutState((prev) => {
+        if (!prev) return prev;
+        const next = fn(prev);
+        saveLayout(kind, next);
+        return next;
+      }),
+    [kind],
+  );
+  // Esc returns a maximized panel to its place (unless a dialog is open)
+  useEffect(() => {
+    if (!maximized) return;
+    const on = (e: KeyboardEvent) => e.key === "Escape" && !document.querySelector('[role="dialog"]') && setMaximized(null);
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [maximized]);
+
   // anchors render as pages or times from the first paint, before a viewer mounts
   useLayoutEffect(() => {
     if (lecture) player.setUnit(unitOf(lecture));
@@ -176,13 +206,15 @@ export function LectureView() {
   const [lastViewOf, setLastViewOf] = useState<Record<string, TabId>>({});
   const setTab = useCallback(
     (t: TabId) => {
+      // in the workspace, "go to a tab" shows that widget's panel tab
+      updateLayout((l) => showWidget(l, t as WidgetId));
       if (t === "memo") return setMemoOpen(true);
       setTabState(t);
       saveValue(`tab:${id}`, t);
       const g = [...GROUPS, TRANSCRIPT_GROUP].find((x) => x.tabs.some((v) => v.id === t));
       if (g) setLastViewOf((m) => ({ ...m, [g.id]: t }));
     },
-    [id, setMemoOpen],
+    [id, setMemoOpen, updateLayout],
   );
   const [pendingAsk, setPendingAsk] = useState<{ text: string; anchor: number | null } | null>(null);
   const [memoAppend, setMemoAppend] = useState<{ text: string; time: number | null; n: number } | null>(null);
@@ -295,8 +327,13 @@ export function LectureView() {
   }
   if (!lecture || !ctx) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <Spinner className="size-6" />
+      <div className="flex h-full flex-col gap-3 p-3" aria-busy>
+        <Skeleton className="h-10 w-72" />
+        <div className="flex min-h-0 flex-1 gap-2.5">
+          <Skeleton className="h-full flex-[42]" />
+          <Skeleton className="h-full flex-[33]" />
+          <Skeleton className="h-full flex-[25]" />
+        </div>
       </div>
     );
   }
@@ -440,11 +477,69 @@ export function LectureView() {
     </div>
   );
 
+  const useWorkspace = wide && ready && layout !== null;
+  const sourceGroup = layout ? groupOf(layout, "source") : undefined;
+  const toggleSourceMax = () => setMaximized((m) => (m && m === sourceGroup?.id ? null : (sourceGroup?.id ?? null)));
+  const defs: Record<WidgetId, WidgetDef | undefined> = {
+    source: {
+      label: isDoc ? "PDF" : "영상",
+      icon: isDoc ? <FileText /> : <PlayCircle />,
+      render: () =>
+        isDoc ? (
+          <Suspense fallback={<div className="flex h-full items-center justify-center"><Spinner /></div>}>
+            <PdfViewer lecture={lecture} className="h-full rounded-xl border-0" />
+          </Suspense>
+        ) : (
+          // the body is a size container: the video is as large as the panel allows at 16:9
+          <div className="flex h-full items-center justify-center [container-type:size]">
+            <div className="w-full" style={{ maxWidth: "calc(100cqh * 16 / 9)" }}>
+              {hasMedia ? (
+                <Player
+                  lecture={lecture}
+                  chapters={chapters}
+                  frames={frames}
+                  segments={transcript?.segments}
+                  onAsk={(t) => ctx.ask(`지금 보고 있는 [${fmtTime(t)}] 장면에서 설명하는 내용을 풀어서 설명해 줘`, t)}
+                  large={maximized !== null && maximized === sourceGroup?.id}
+                  onToggleLarge={toggleSourceMax}
+                />
+              ) : null}
+            </div>
+          </div>
+        ),
+    },
+    transcript: isDoc ? undefined : { label: "대본", icon: <LayoutList />, render: () => <TranscriptPanel transcript={transcript} chapters={chapters} loading={!transcribed} /> },
+    overview: { label: "개요", icon: <BookOpen />, scroll: true, render: () => (analysis ? <OverviewTab lecture={lecture} analysis={analysis} /> : null) },
+    notes: { label: "노트", icon: <FileText />, scroll: true, render: (scroller) => (analysis ? <NotesTab lecture={lecture} analysis={analysis} scroller={scroller} /> : null) },
+    explore: { label: "인터랙티브", icon: <Blocks />, render: () => (analysis ? <ExploreTab lecture={lecture} analysis={analysis} /> : null) },
+    mindmap: { label: "마인드맵", icon: <Network />, render: () => (analysis ? <MindmapTab analysis={analysis} /> : null) },
+    cards: { label: "카드", icon: <Layers />, badge: due, scroll: true, render: () => <CardsTab lecture={lecture} /> },
+    quiz: { label: "퀴즈", icon: <ClipboardCheck />, scroll: true, render: () => <QuizTab lecture={lecture} /> },
+    chat: { label: "튜터", icon: <MessageCircle />, render: () => <ChatTab lecture={lecture} pending={pendingAsk} onPendingConsumed={() => setPendingAsk(null)} /> },
+    materials: { label: "자료 만들기", icon: <Sparkles />, scroll: true, render: () => <MaterialsTab lecture={lecture} /> },
+    memo: { label: "메모", icon: <NotebookPen />, render: () => <MemoTab lecture={lecture} appendRequest={memoAppend} /> },
+  };
+  const panelMenu = useWorkspace ? (
+    <PanelMenu
+      layout={layout}
+      defs={defs}
+      onToggle={(w) => updateLayout((l) => (shown(l).includes(w) ? removeWidget(l, w) : showWidget(l, w)))}
+      onPreset={(pid) => {
+        setMaximized(null);
+        updateLayout(() => preset(pid, kind));
+      }}
+    />
+  ) : null;
+
   return (
     <StudyContext.Provider value={ctx}>
       <div className="flex h-full flex-col">
-        <LectureHeader lecture={lecture} onReprocess={() => setReprocessOpen(true)} onSettings={() => openSettings()} onExport={() => setExportOpen(true)} />
-        {wide ? (
+        <LectureHeader lecture={lecture} onReprocess={() => setReprocessOpen(true)} onSettings={() => openSettings()} onExport={() => setExportOpen(true)} panelMenu={panelMenu} />
+        {useWorkspace ? (
+          <div className="flex min-h-0 flex-1 px-3 pb-3">
+            <Workspace layout={layout} onLayout={(next) => updateLayout(() => next)} defs={defs} maximized={maximized} onMaximize={setMaximized} />
+          </div>
+        ) : wide ? (
           <SplitPane left={left} right={right} ratio={split} onRatio={setSplit} />
         ) : (
           <div className="flex min-h-0 flex-1 flex-col gap-3 px-3 pb-3">
@@ -560,7 +655,43 @@ function RowHandle({ column, share, onShare, onHide }: { column: React.RefObject
   );
 }
 
-function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture: Lecture; onReprocess: () => void; onSettings: () => void; onExport: () => void }) {
+/** "패널 편집": which widgets are on screen, layout presets, and a reset. */
+function PanelMenu({ layout, defs, onToggle, onPreset }: { layout: LayoutNode; defs: Record<WidgetId, WidgetDef | undefined>; onToggle: (w: WidgetId) => void; onPreset: (p: PresetId) => void }) {
+  const on = new Set(shown(layout));
+  return (
+    <Menu
+      trigger={
+        <Button size="sm" variant="ghost">
+          <LayoutPanelLeft className="size-3.5" /> <span className="hidden sm:inline">패널 편집</span>
+          <ChevronDown className="size-3.5" />
+        </Button>
+      }
+    >
+      <div className="px-2 pt-1 pb-1 text-[11.5px] font-semibold text-faint">위젯</div>
+      {ALL_WIDGETS.filter((w) => w !== "source" && defs[w]).map((w) => (
+        <MenuItem key={w} icon={on.has(w) ? <Check /> : <span className="size-4" />} onSelect={() => onToggle(w)}>
+          {defs[w]!.label}
+        </MenuItem>
+      ))}
+      <MenuSeparator />
+      <div className="px-2 pt-1 pb-1 text-[11.5px] font-semibold text-faint">배치</div>
+      {(Object.keys(PRESETS) as PresetId[]).map((p) => (
+        <MenuItem key={p} icon={<LayoutPanelLeft />} onSelect={() => onPreset(p)}>
+          <span className="flex flex-col">
+            {PRESETS[p].label}
+            <span className="text-[11.5px] text-faint">{PRESETS[p].hint}</span>
+          </span>
+        </MenuItem>
+      ))}
+      <MenuSeparator />
+      <MenuItem icon={<RotateCcw />} onSelect={() => onPreset("toss")}>
+        초기화
+      </MenuItem>
+    </Menu>
+  );
+}
+
+function LectureHeader({ lecture, onReprocess, onSettings, onExport, panelMenu }: { lecture: Lecture; onReprocess: () => void; onSettings: () => void; onExport: () => void; panelMenu?: ReactNode }) {
   const navigate = useNavigate();
   const qc = useQueryClient();
   const [editing, setEditing] = useState(false);
@@ -606,6 +737,7 @@ function LectureHeader({ lecture, onReprocess, onSettings, onExport }: { lecture
         )}
         {!editing ? <ItemLabels lecture={lecture} /> : null}
       </div>
+      {panelMenu}
       {lecture.analyzed ? (
         <Menu
           trigger={
